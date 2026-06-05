@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS records (
 CREATE TABLE IF NOT EXISTS photos (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id     INTEGER NOT NULL,
-  file_path     TEXT NOT NULL,                   -- 5-1 先存 staging 路徑，5-2 搬檔後更新
+  file_path     TEXT NOT NULL,                   -- 正式歸檔路徑（5-2 搬檔後；搬檔失敗才退暫存路徑）
   upload_type   TEXT,                            -- photo / document
   has_exif      INTEGER NOT NULL DEFAULT 0,      -- 0/1
   exif_taken_at TEXT,
@@ -77,6 +77,42 @@ export interface NewRecord {
   status: string;
   takenAt: string | null;
   receivedAt: string;
+}
+
+/** 紀錄重點欄位（人工確認/回覆用） */
+export interface RecordBrief {
+  recordNo: string;
+  status: string;
+  projectCode: string | null;
+  projectName: string | null;
+}
+
+/** 紀錄完整欄位（重歸檔／改工地時重寫 metadata 用） */
+export interface RecordFull extends RecordBrief {
+  id: number;
+  channel: string;
+  resolveMethod: string;
+  textNote: string | null;
+  reporterId: string;
+  reporterName: string | null;
+  sourceMessageId: string | null;
+  mediaGroupId: string | null;
+  gpsLat: number | null;
+  gpsLng: number | null;
+  takenAt: string | null;
+  receivedAt: string;
+}
+
+/** 照片列（重歸檔搬檔用） */
+export interface PhotoRow {
+  id: number;
+  filePath: string;
+  uploadType: string | null;
+  hasExif: boolean;
+  exifTakenAt: string | null;
+  exifGpsLat: number | null;
+  exifGpsLng: number | null;
+  bytes: number | null;
 }
 
 /** 寫入一張照片所需欄位 */
@@ -169,6 +205,123 @@ export class Db {
         p.phase ?? 'before',
         new Date().toISOString(),
       );
+  }
+
+  /** 依 id 查紀錄重點欄位（人工確認用） */
+  getRecordById(id: number): RecordBrief | null {
+    const row = this.db
+      .prepare(
+        `SELECT record_no, status, project_code, project_name
+           FROM records WHERE id = ?`,
+      )
+      .get(id) as
+      | {
+          record_no: string;
+          status: string;
+          project_code: string | null;
+          project_name: string | null;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      recordNo: row.record_no,
+      status: row.status,
+      projectCode: row.project_code,
+      projectName: row.project_name,
+    };
+  }
+
+  /** 取完整紀錄（重歸檔／改工地用）；找不到回 null */
+  getRecordFull(id: number): RecordFull | null {
+    const row = this.db
+      .prepare(
+        `SELECT id, record_no, status, project_code, project_name, channel,
+                resolve_method, text_note, reporter_id, reporter_name,
+                source_message_id, media_group_id, gps_lat, gps_lng,
+                taken_at, received_at
+           FROM records WHERE id = ?`,
+      )
+      .get(id) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      id: row.id as number,
+      recordNo: row.record_no as string,
+      status: row.status as string,
+      projectCode: (row.project_code as string | null) ?? null,
+      projectName: (row.project_name as string | null) ?? null,
+      channel: row.channel as string,
+      resolveMethod: row.resolve_method as string,
+      textNote: (row.text_note as string | null) ?? null,
+      reporterId: row.reporter_id as string,
+      reporterName: (row.reporter_name as string | null) ?? null,
+      sourceMessageId: (row.source_message_id as string | null) ?? null,
+      mediaGroupId: (row.media_group_id as string | null) ?? null,
+      gpsLat: (row.gps_lat as number | null) ?? null,
+      gpsLng: (row.gps_lng as number | null) ?? null,
+      takenAt: (row.taken_at as string | null) ?? null,
+      receivedAt: row.received_at as string,
+    };
+  }
+
+  /** 取某筆紀錄的所有照片（依 id 排序，與當初寫入同序） */
+  getPhotos(recordId: number): PhotoRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, file_path, upload_type, has_exif, exif_taken_at,
+                exif_gps_lat, exif_gps_lng, bytes
+           FROM photos WHERE record_id = ? ORDER BY id`,
+      )
+      .all(recordId) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      id: r.id as number,
+      filePath: r.file_path as string,
+      uploadType: (r.upload_type as string | null) ?? null,
+      hasExif: (r.has_exif as number) === 1,
+      exifTakenAt: (r.exif_taken_at as string | null) ?? null,
+      exifGpsLat: (r.exif_gps_lat as number | null) ?? null,
+      exifGpsLng: (r.exif_gps_lng as number | null) ?? null,
+      bytes: (r.bytes as number | null) ?? null,
+    }));
+  }
+
+  /** 更新單張照片的歸檔路徑（搬檔後） */
+  updatePhotoPath(photoId: number, newPath: string): void {
+    this.db
+      .prepare('UPDATE photos SET file_path = ? WHERE id = ?')
+      .run(newPath, photoId);
+  }
+
+  /** 指定/變更紀錄的工地與判定方式（改工地用） */
+  setProject(
+    id: number,
+    code: string | null,
+    name: string | null,
+    resolveMethod: string,
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE records SET project_code = ?, project_name = ?, resolve_method = ?
+           WHERE id = ?`,
+      )
+      .run(code, name, resolveMethod, id);
+  }
+
+  /**
+   * 更新紀錄狀態並寫一筆狀態歷程。
+   * 回傳原狀態；找不到紀錄回 null。
+   */
+  updateStatus(
+    id: number,
+    toStatus: string,
+    changedBy: string | null,
+  ): string | null {
+    const cur = this.getRecordById(id);
+    if (!cur) return null;
+    this.db
+      .prepare('UPDATE records SET status = ? WHERE id = ?')
+      .run(toStatus, id);
+    this.insertStatusLog(id, cur.status, toStatus, changedBy);
+    return cur.status;
   }
 
   /** 寫入狀態異動歷程 */

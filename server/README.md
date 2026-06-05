@@ -3,13 +3,18 @@
 正式後端 V0。Node.js + TypeScript，Telegram Bot 採 **long polling**（免公開網址）。
 分版開發，每個功能點先跑通再做下一個（見 `../docs/NEXT_ACTIONS.md`）。
 
-## 目前進度：V0 第 1 步（收訊管線）
-- ✅ `MessageChannelAdapter` 介面（平台無關，未來可換 LINE）
-- ✅ `TelegramAdapter`：long polling 收訊 → 正規化為 `IncomingMessage`
-- ✅ 進入點只把訊息印出來（**尚未**落檔 / 寫 DB / 做工地判斷）
+## 目前進度：V0 程式碼完成（8 片，離線驗收全綠，🟡 實機驗收待跑）
+- ✅ 收訊管線 + `MessageChannelAdapter` 介面（平台無關，未來可換 LINE）
+- ✅ 照片下載 + EXIF（exifr；document 保留、photo 壓縮掉，含 HEIC 能力）
+- ✅ 相簿合併（media group debounce ~2 秒）
+- ✅ 工地判斷前 4 層 + `/addproject`（判不出→ `_inbox` 暫存）
+- ✅ SQLite 落地（records/photos/status_logs；`node:sqlite`）
+- ✅ 搬檔歸檔（`_staging`→`projects`/`_inbox`、`metadata.json`/`text.txt`）
+- ✅ Bot 回覆整理結果 + ✅/✏️ 確認（callback_query 管線、`待確認→待改善`）
+- ✅ 第 5 層按鈕詢問工地 + ✏️ 改工地（重歸檔，record_no 不重編）
 
-> 後續步驟：照片下載 + EXIF → media group debounce 合併 → 五層工地判斷 →
-> `_inbox` 暫存 → SQLite 寫入 → Bot 回覆 + inline keyboard 人工確認。
+> 離線驗收：`npx tsx scripts/smoke-archive.ts`、`smoke-confirm.ts`、`smoke-site.ts`（皆全綠）。
+> 下一步：真 Telegram 實機驗收 → 連續 5 工作天實際使用。
 
 ## 目錄結構
 ```

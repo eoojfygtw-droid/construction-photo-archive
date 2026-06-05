@@ -17,6 +17,11 @@ import { SiteResolver } from './core/resolve/SiteResolver';
 import { handleCommand } from './core/commands/handleCommand';
 import { Db } from './db';
 import { writeRecord } from './core/records/recordWriter';
+import {
+  handleConfirmCallback,
+  promptConfirm,
+} from './core/confirm/confirmFlow';
+import { buildSitePickerButtons } from './core/confirm/siteFlow';
 
 async function main(): Promise<void> {
   const config = loadConfig(); // 缺 token 會在這裡 fail loudly
@@ -98,25 +103,75 @@ async function main(): Promise<void> {
       return;
     }
 
-    // 寫入 SQLite（5-1）；狀態 待確認
+    // 寫入 SQLite（5-1）+ 正式搬檔歸檔（5-2）；狀態 待確認
     try {
-      const { recordNo } = writeRecord(db, msg, intake, result, projectStore);
-      logger.info('已建檔', {
+      const { recordNo, recordId, archiveDir } = await writeRecord(
+        db,
+        msg,
+        intake,
+        result,
+        projectStore,
+      );
+      logger.info('已建檔歸檔', {
         紀錄編號: recordNo,
         工地: result.projectCode ?? '（未歸檔/_inbox）',
         判定方式: result.method,
         照片數: intake.length,
+        歸檔目錄: archiveDir,
         狀態: '待確認',
         回報人: `${msg.reporterName}（${msg.reporterId}）`,
       });
+
+      // Bot 回覆整理結果 + ✅/✏️ 人工確認（5-3a）
+      if (result.projectCode) {
+        const proj = projectStore.findByCode(result.projectCode);
+        await promptConfirm(adapter, msg.chatId, {
+          recordId,
+          recordNo,
+          projectLabel: `${result.projectCode}${proj ? ` ${proj.name}` : ''}`,
+          method: result.method,
+          photoCount: intake.length,
+          note:
+            [msg.text, msg.caption]
+              .map((s) => s?.trim())
+              .filter((s): s is string => !!s)
+              .join(' ') || null,
+          reporterName: msg.reporterName,
+        });
+      } else {
+        // 判不出工地（第 5 層）：送工地選單讓使用者點選；無工地可選則純文字提示
+        const activeProjects = projectStore.listActive();
+        if (activeProjects.length > 0) {
+          await adapter.sendMessageWithButtons(
+            msg.chatId,
+            `⚠️ 判不出工地（${recordNo}），已暫存 _inbox。請選擇正確工地：`,
+            buildSitePickerButtons(projectStore, recordId),
+            1,
+          );
+        } else {
+          await adapter.sendMessage(
+            msg.chatId,
+            `⚠️ 判不出工地，已暫存待歸檔（${recordNo}）。尚未設定任何工地，請先用 /addproject 新增。`,
+          );
+        }
+      }
     } catch (err) {
-      logger.error('寫入 DB 失敗', err instanceof Error ? err.message : err);
+      logger.error('寫入 DB / 搬檔失敗', err instanceof Error ? err.message : err);
     }
   };
 
   // 相簿合併：同一 media group 的多則訊息 debounce 約 2 秒合併為一筆再處理
   const aggregator = new MediaGroupAggregator(onRecordReady, 2000);
   adapter.onMessage((msg) => aggregator.push(msg));
+
+  // 人工確認按鈕回呼（✅ 確認 / ✏️ 改工地 / 選工地）；單則失敗不影響主迴圈
+  adapter.onCallback(async (cb) => {
+    try {
+      await handleConfirmCallback(adapter, db, projectStore, cb);
+    } catch (err) {
+      logger.error('處理按鈕回呼失敗', err instanceof Error ? err.message : err);
+    }
+  });
 
   // 優雅關閉：Ctrl+C / 終止訊號時停止收訊再退出
   const shutdown = async () => {

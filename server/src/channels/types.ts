@@ -63,3 +63,26 @@ export interface IncomingMessage {
 export type IncomingMessageHandler = (
   msg: IncomingMessage,
 ) => void | Promise<void>;
+
+/**
+ * 正規化後的按鈕回呼（inline keyboard 被按下）。
+ * 對應 Telegram callback_query；換 LINE 時由其 adapter 轉成同一型別。
+ */
+export interface IncomingCallback {
+  channel: ChannelName;
+  /** 平台回呼識別碼（用於關掉按鈕的「載入中」轉圈） */
+  callbackId: string;
+  /** 按鈕攜帶的資料（我們在這裡編入「動作:紀錄id」） */
+  data: string;
+  chatId: string;
+  /** 被按的那則訊息 id（用於就地更新訊息內容） */
+  messageId: string;
+  /** 按按鈕的人 */
+  fromId: string;
+  fromName: string;
+}
+
+/** 收到按鈕回呼時的處理函式 */
+export type IncomingCallbackHandler = (
+  cb: IncomingCallback,
+) => void | Promise<void>;

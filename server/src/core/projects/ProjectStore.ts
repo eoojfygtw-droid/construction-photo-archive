@@ -48,6 +48,11 @@ export class ProjectStore {
     return this.projects;
   }
 
+  /** 啟用中的工地（按鈕詢問工地選單用） */
+  listActive(): Project[] {
+    return this.projects.filter((p) => p.active);
+  }
+
   /** 依代碼查（不分大小寫） */
   findByCode(code: string): Project | undefined {
     const c = code.trim().toUpperCase();

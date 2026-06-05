@@ -2,6 +2,26 @@
 
 > 時間軸。重大進展、踩雷、里程碑往這裡補。詳細規格演進另見 docs/HANDOFF.md「二、規格演進歷程」。
 
+## 2026-06-05 正式後端 V0 收尾（5-2 搬檔歸檔 + 5-3 Bot 按鈕確認/改工地）
+延續同日，完成 V0 後端最後三片（程式碼完成 + 離線驗收，🟡 實機驗收待跑）：
+- **5-2 正式搬檔歸檔**：新增 `core/records/archiver.ts`（與 DB 解耦）。照片從 `_staging` 搬到 `projects/{code}_{name}/{YYYY}/{MM}/{DD}/records/{record_no}/`（判不出→`_inbox/{record_no}/`），寫 `metadata.json`/`text.txt`、清掉淨空暫存目錄；DB photos 改存正式路徑。檔名 `{record_no}-{NN}{ext}` 自帶識別；工地名稱淨化非法字元；搬檔 rename→copy 退路→保留暫存不丟檔。
+- **5-3a Bot 回覆 + ✅ 確認**：通道層擴充 callback_query 管線（`onCallback`/`answerCallback`/`editMessageText`，`getUpdates` 加訂閱）。建檔後送整理結果 + ✅/✏️ inline keyboard；按 ✅ → `待確認→待改善` 就地更新訊息、重按防呆。新增 `core/confirm/confirmFlow.ts`、DB `getRecordById`/`updateStatus`。
+- **5-3b 第 5 層按鈕詢問工地 + ✏️ 改工地**：unresolved 送工地選單；選定/改工地 → `archiver.reassignArchive` 把照片從 `_inbox`/舊工地搬到新工地、改寫 metadata、更新 DB（工地/狀態/照片路徑、`resolve_method=manual_pick`）。**record_no 不重編**（見 DECISIONS）。新增 `core/confirm/siteFlow.ts`、DB `getRecordFull`/`getPhotos`/`updatePhotoPath`/`setProject`、按鈕多列排版。
+
+### 本期成效
+| 項目 | 燈號 |
+|---|---|
+| 5-2 搬檔歸檔（_inbox/projects + metadata.json/text.txt） | 🟢 離線驗收 16/16 |
+| 5-3a callback 管線 + Bot 回覆 + ✅ 確認 | 🟢 離線驗收 13/13 |
+| 5-3b 按鈕詢問工地 + ✏️ 改工地（重歸檔） | 🟢 離線驗收 16/16 |
+| `npm run typecheck` | 🟢 通過 |
+| 實機驗收（真 Telegram 傳照片/按按鈕） | 🟡 待跑（V0 連續 5 工作天驗收起點） |
+| 紅線（照片/個資/metadata/text/db 不進 git） | 🟢 `server/data/` 全擋並掃描確認 |
+
+### 下一步
+- **實機驗收 V0**：真 Telegram 跑一輪（傳照片→看 `data/projects` 長檔→按 ✅/✏️/選工地），開始「連續 5 工作天實際使用、欄位修正率達標」驗收。
+- 等同學 prototype 回饋（欄位/Bot 格式/匯出檔名）。
+
 ## 2026-06-05 正式後端 V0 開工（收訊管線 → SQLite 落地）
 在 `server/` 動工正式後端（Node + TS，嚴格分版、每片跑通才做下一片），完成並實機驗收 5 個里程碑：
 1. **收訊管線 + adapter 介面**：Telegram long polling 收文字/照片/位置 → 正規化為平台無關的 `IncomingMessage`；`MessageChannelAdapter` 介面預留換 LINE。

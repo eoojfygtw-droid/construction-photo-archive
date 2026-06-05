@@ -12,6 +12,8 @@ import type {
 } from '../MessageChannelAdapter';
 import type {
   ChannelName,
+  IncomingCallback,
+  IncomingCallbackHandler,
   IncomingMessage,
   IncomingMessageHandler,
   IncomingPhoto,
@@ -52,9 +54,16 @@ interface TgMessage {
   location?: TgLocation;
   media_group_id?: string;
 }
+interface TgCallbackQuery {
+  id: string;
+  from?: TgUser;
+  message?: { message_id: number; chat: { id: number } };
+  data?: string;
+}
 interface TgUpdate {
   update_id: number;
   message?: TgMessage;
+  callback_query?: TgCallbackQuery;
 }
 interface TgResponse<T> {
   ok: boolean;
@@ -71,6 +80,7 @@ export class TelegramAdapter implements MessageChannelAdapter {
   private readonly allowedChatId: string;
 
   private handler: IncomingMessageHandler | null = null;
+  private callbackHandler: IncomingCallbackHandler | null = null;
   private offset = 0; // getUpdates 的 update_id 游標
   private running = false;
 
@@ -83,6 +93,10 @@ export class TelegramAdapter implements MessageChannelAdapter {
 
   onMessage(handler: IncomingMessageHandler): void {
     this.handler = handler;
+  }
+
+  onCallback(handler: IncomingCallbackHandler): void {
+    this.callbackHandler = handler;
   }
 
   async start(): Promise<void> {
@@ -113,13 +127,15 @@ export class TelegramAdapter implements MessageChannelAdapter {
         const updates = await this.callApi<TgUpdate[]>('getUpdates', {
           offset: this.offset,
           timeout: this.pollTimeout,
-          allowed_updates: ['message'],
+          allowed_updates: ['message', 'callback_query'],
         });
 
         for (const update of updates) {
           this.offset = update.update_id + 1; // 游標前進，確認過的不再重收
           if (update.message) {
             await this.handleRawMessage(update.message);
+          } else if (update.callback_query) {
+            await this.handleRawCallback(update.callback_query);
           }
         }
       } catch (err) {
@@ -188,6 +204,33 @@ export class TelegramAdapter implements MessageChannelAdapter {
     }
   }
 
+  /** 把按鈕回呼正規化並交給 callbackHandler */
+  private async handleRawCallback(q: TgCallbackQuery): Promise<void> {
+    // 沒有原訊息就無從就地更新，直接略過
+    if (!q.message) return;
+    const chatId = String(q.message.chat.id);
+
+    // 來源過濾：非允許群組的回呼略過（仍關掉轉圈避免使用者端卡住）
+    if (this.allowedChatId && chatId !== this.allowedChatId) {
+      await this.answerCallback(q.id).catch(() => {});
+      return;
+    }
+
+    const cb: IncomingCallback = {
+      channel: this.channel,
+      callbackId: q.id,
+      data: q.data ?? '',
+      chatId,
+      messageId: String(q.message.message_id),
+      fromId: q.from ? String(q.from.id) : 'unknown',
+      fromName: formatReporterName(q.from),
+    };
+
+    if (this.callbackHandler) {
+      await this.callbackHandler(cb);
+    }
+  }
+
   async downloadFile(fileId: string): Promise<DownloadedFile> {
     // 1) getFile 取得平台端檔案路徑（Telegram 的下載連結有時效，臨用臨取）
     const file = await this.callApi<{
@@ -223,13 +266,34 @@ export class TelegramAdapter implements MessageChannelAdapter {
     chatId: string,
     text: string,
     buttons: OutgoingButton[],
+    columns?: number,
   ): Promise<void> {
-    // 單列排版：每個按鈕一格，對應 Telegram inline keyboard
-    const inline_keyboard = [
-      buttons.map((b) => ({ text: b.text, callback_data: b.callbackData })),
-    ];
     await this.callApi('sendMessage', {
       chat_id: chatId,
+      text,
+      reply_markup: { inline_keyboard: toKeyboard(buttons, columns) },
+    });
+  }
+
+  async answerCallback(callbackId: string, text?: string): Promise<void> {
+    await this.callApi('answerCallbackQuery', {
+      callback_query_id: callbackId,
+      ...(text ? { text } : {}),
+    });
+  }
+
+  async editMessageText(
+    chatId: string,
+    messageId: string,
+    text: string,
+    buttons?: OutgoingButton[],
+    columns?: number,
+  ): Promise<void> {
+    // 不傳 buttons＝清掉按鈕（傳空 inline_keyboard）
+    const inline_keyboard = buttons ? toKeyboard(buttons, columns) : [];
+    await this.callApi('editMessageText', {
+      chat_id: chatId,
+      message_id: Number(messageId),
       text,
       reply_markup: { inline_keyboard },
     });
@@ -273,6 +337,26 @@ function formatReporterName(user?: TgUser): string {
   if (name) return name;
   if (user.username) return `@${user.username}`;
   return String(user.id);
+}
+
+/**
+ * 把按鈕陣列排成 Telegram inline_keyboard（二維：列 × 顆）。
+ * columns 未指定時全部排成一列（維持原行為）；指定時每列 columns 顆。
+ */
+function toKeyboard(
+  buttons: OutgoingButton[],
+  columns?: number,
+): { text: string; callback_data: string }[][] {
+  const perRow = columns && columns > 0 ? columns : buttons.length || 1;
+  const rows: { text: string; callback_data: string }[][] = [];
+  for (let i = 0; i < buttons.length; i += perRow) {
+    rows.push(
+      buttons
+        .slice(i, i + perRow)
+        .map((b) => ({ text: b.text, callback_data: b.callbackData })),
+    );
+  }
+  return rows;
 }
 
 /** 取錯誤訊息字串 */

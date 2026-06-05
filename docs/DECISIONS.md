@@ -44,6 +44,15 @@
 - **理由**：需求方核心信任前提，外洩即專案失敗，優先於任何功能。資料離開掌控的已知三處：Telegram 伺服器（通道本質）、V1+ AI API（需公司同意，敏感案場可關）、戰情室 docs（只放紅綠燈、無真數字）。
 - **備註**：2026-06-05 為給同學看 prototype 暫將 repo 設 public + 開 Pages，屬臨時窗口，開發階段結束應收回 private。
 
+## 2026-06-05：改工地不重編 record_no（5-3b）
+- **決策**：當一筆 `INBOX-` 紀錄事後被人工指定工地（第 5 層按鈕詢問或 ✏️ 改工地），**record_no 保留原編號不重編**，只填 `project_code`/`project_name`、把照片搬到 `projects/{code}_…` 並改寫 metadata，`resolve_method` 標為 `manual_pick`，狀態定案 `待改善`。
+- **理由**：record_no 當不可變識別碼最單純，零重編號與資料夾改名風險；前綴語意的小落差（INBOX vs 工地碼）可在 V1 後台補顯示工地欄位。重編會牽涉唯一性、流水號重算、跨資料夾搬移，CP 值低。
+- **影響範圍**：`server/src/core/confirm/siteFlow.ts`、`archiver.reassignArchive`。
+
+## 2026-06-05：V0 歸檔目錄照片平鋪（暫不分 photos/voices 子目錄）
+- **決策**：V0 把照片直接放 `records/{record_no}/`，檔名 `{record_no}-{NN}{ext}`（自帶識別、匯出可追溯），同層放 `metadata.json`/`text.txt`。HANDOFF 原規格的 `photos/ voices/` 子目錄暫不開，待 V1 接語音時再分。
+- **理由**：V0 只有照片、無語音，平鋪最簡單；檔名已自帶 record_no，不靠目錄分類也能追溯。搬檔策略：同碟 `rename`，跨碟/失敗退 `copy+unlink`，連退路都失敗保留暫存路徑不丟檔。
+
 ## 2026-06-05：嚴格分版，V0 驗收未過不進 V1
 - **決策**：V0（Bot 收訊→五層判斷→歸檔→SQLite→Bot 按鈕確認）驗收＝連續 5 個工作天實際使用、AI 欄位修正率 < 15%；過了才做 V1（語音/後台/Excel/狀態流），再 V2（前後照片關聯/逾期提醒/日報）。
 - **理由**：一開始做太大做不完是最大風險；先用最小管線換真實使用回饋。

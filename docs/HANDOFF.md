@@ -17,7 +17,8 @@
    manual_code(#A001)> photo_gps > telegram_location > recent_context(2小時)> 按鈕詢問
 4. **V0 範圍刪減**:不做 AI 影像辨識、不做語音轉文字、不做 LINE、不做 PDF —— 先把歸檔管線做穩,保留 AIAnalyzer 介面
 5. **決定先做 Web Prototype 驗證流程,再寫正式後端**
-6. **正式後端 V0 開工**(2026-06-05):`server/` 嚴格分版完成 5 片——收訊管線+adapter / 照片下載+EXIF / 相簿合併 / 工地判斷前 4 層 / SQLite 落地;SQLite 改用 Node 內建 `node:sqlite`(原訂 better-sqlite3,Node 24+Windows 編譯易卡);訊息序列化處理確保 recent_context 正確(目前在此階段,剩 5-2 搬檔歸檔、5-3 Bot 按鈕確認)
+6. **正式後端 V0 開工**(2026-06-05):`server/` 嚴格分版完成 5 片——收訊管線+adapter / 照片下載+EXIF / 相簿合併 / 工地判斷前 4 層 / SQLite 落地;SQLite 改用 Node 內建 `node:sqlite`(原訂 better-sqlite3,Node 24+Windows 編譯易卡);訊息序列化處理確保 recent_context 正確
+7. **正式後端 V0 程式碼完成**(2026-06-05):再完成 5-2 搬檔歸檔 / 5-3a Bot 回覆+✅ 確認 / 5-3b 第 5 層按鈕詢問工地+✏️ 改工地。兩個務實取捨:**改工地不重編 record_no**(只填 project_code、搬檔、resolve_method=manual_pick);**歸檔目錄照片平鋪**於 `records/{record_no}/`(檔名 `{record_no}-NN.ext`,暫不開 `photos/voices/` 子目錄,V1 接語音再分)。離線 smoke test 全綠;🟡 實機驗收(真 Telegram)待跑——即 V0「連續 5 工作天」驗收起點
 
 ## 三、目前狀態
 
@@ -30,19 +31,23 @@
 - 建置驗證通過(tsc + vite build),本機 npm run dev 可跑
 - 規格文件:docs/PRD_v2.md
 
-- **正式後端 V0（`server/`）已完成 5 片並實機驗收**：
+- **正式後端 V0（`server/`）程式碼完成 8 片（離線驗收全綠，🟡 實機驗收待跑）**：
   1. 收訊管線 + `MessageChannelAdapter` 介面（Telegram long polling → 正規化 `IncomingMessage`）
   2. 照片下載 + EXIF（exifr；document 保留、photo 壓縮掉）
   3. 相簿合併（media group debounce ~2 秒）
   4. 工地判斷前 4 層 + `/addproject` + 工地清單來源（`data/projects.seed.json`，gitignore 擋）
   5. SQLite 落地（records/photos/status_logs，編號流水號、回報人、狀態歷程；用 `node:sqlite`）
+  6. **搬檔歸檔（5-2）**：`_staging`→`projects/_inbox`、`metadata.json`/`text.txt`、清暫存；DB 存正式路徑
+  7. **Bot 回覆 + ✅ 確認（5-3a）**：callback_query 管線、整理結果+✅/✏️、`待確認→待改善`、重按防呆
+  8. **第 5 層按鈕詢問工地 + ✏️ 改工地（5-3b）**：工地選單、`reassignArchive` 重歸檔、record_no 不重編、`resolve_method=manual_pick`
 
 ### 進行中
 - 同學檢視 prototype 操作流程(GitHub Pages 臨時公開,開發告一段落要收回 private)
 - 待回饋重點:欄位夠不夠(樓層/工種?)、Bot 回覆格式好不好懂、匯出檔名格式
 
 ### 未開始
-- 後端 V0 剩餘:5-2 正式搬檔歸檔(_inbox/projects + metadata.json/text.txt)、5-3 Bot 回覆 + ✅/✏️ 人工確認(含第 5 層按鈕詢問工地)
+- **V0 實機驗收**:真 Telegram 跑一輪 → 連續 5 工作天實際使用、欄位修正率達標才進 V1
+- V1:語音轉文字、後台網頁(改欄位/看照片)、Excel 匯出、狀態流、接 AI(需公司同意)
 
 ## 四、正式後端規格摘要(確認後開發)
 
