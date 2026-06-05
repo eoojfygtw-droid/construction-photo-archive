@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx scripts/smoke-archive.ts && tsx scripts/smoke-confirm.ts && tsx scripts/smoke-site.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

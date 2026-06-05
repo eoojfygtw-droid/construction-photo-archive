@@ -2,6 +2,9 @@
 
 > 時間軸。重大進展、踩雷、里程碑往這裡補。詳細規格演進另見 docs/HANDOFF.md「二、規格演進歷程」。
 
+## 2026-06-05 補 `npm run test` 串接三支離線 smoke test 🟢
+`server/package.json` 加 `test` script，以 `&&` 串接既有三支離線 smoke（`tsx scripts/smoke-archive.ts && smoke-confirm.ts && smoke-site.ts`），任一支 `process.exit(1)` 即整體中斷回非零。`npm run test` 全綠：archive 16 / confirm 13 / site 16，0 失敗。解掉「smoke test 只能 `tsx` 直跑、會跳 proceed 詢問」的缺口，後續驗收/CI 一條指令到底。
+
 ## 2026-06-05 正式後端 V0 實機驗收通過（真 Telegram）🟢
 桌機開工後接續做 V0 實機驗收。bot `@Cotton19testrobot` 真跑一輪，五層工地判斷 + 歸檔 + 按鈕逐項對 DB 與 `data/` 落地，全綠：
 
