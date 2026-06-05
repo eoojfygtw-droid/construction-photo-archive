@@ -2,6 +2,30 @@
 
 > 時間軸。重大進展、踩雷、里程碑往這裡補。詳細規格演進另見 docs/HANDOFF.md「二、規格演進歷程」。
 
+## 2026-06-05 正式後端 V0 實機驗收通過（真 Telegram）🟢
+桌機開工後接續做 V0 實機驗收。bot `@Cotton19testrobot` 真跑一輪，五層工地判斷 + 歸檔 + 按鈕逐項對 DB 與 `data/` 落地，全綠：
+
+| 驗收項 | 結果 | 證據 |
+|---|---|---|
+| manual_code（裸碼 A001，本次修正點） | 🟢 | `A001-20260605-004` method=manual_code |
+| photo_gps（document 上傳保留 EXIF） | 🟢 | `C001-002` GPS 24.08852,120.72577 距 0m、taken_at 寫入、has_exif=1 |
+| telegram_location / 純位置不建檔 | 🟢 | 距 C001 14m、僅更新上下文 |
+| recent_context | 🟢 | 沿用上下文歸 C001 |
+| media group 合併 | 🟢 | 3 則合併 → 單筆 `C001-003`（照片數 3） |
+| ✅ 確認 | 🟢 | 狀態 `待確認→待改善` + status_logs |
+| ✏️ 改工地 / 工地選單 | 🟢 | `INBOX-003`→TEST、`manual_pick`、照片搬至 TEST 資料夾、_inbox 清空 |
+| record_no 不重編 | 🟢 | 改工地後仍 `INBOX-20260605-003` |
+| `_staging` 搬檔後清空 | 🟢 | 掃描為空 |
+
+**唯一落差並修正**：第 1 層 manual_code 原只認 `#A001`，實機發現工人多半不打 `#`，「今天到 A001」被誤判 unresolved。已擴充為**裸碼也認、只比對已登錄工地清單**（`SiteResolver.matchManualCode`，離線 7/7 通過，含 `A0011` 不誤認、純中文正確留 unresolved）。詳見 DECISIONS。
+
+附帶：新增 `server/scripts/preflight.ts`（開跑前用 token 打 getMe 健檢，不外洩 token）。
+
+### 下一步
+- 進入 V0「**連續 5 工作天實際使用、欄位修正率達標**」驗收期。
+- 開始正式驗收前可清掉今日測試資料（app.db + data/projects/_inbox/_staging），保留 seed，從乾淨狀態起算。
+- 補充次要觀察：`TELEGRAM_ALLOWED_CHAT_ID` 未設＝接收所有來源，正式上線建議綁定單一工作群組。
+
 ## 2026-06-05 正式後端 V0 收尾（5-2 搬檔歸檔 + 5-3 Bot 按鈕確認/改工地）
 延續同日，完成 V0 後端最後三片（程式碼完成 + 離線驗收，🟡 實機驗收待跑）：
 - **5-2 正式搬檔歸檔**：新增 `core/records/archiver.ts`（與 DB 解耦）。照片從 `_staging` 搬到 `projects/{code}_{name}/{YYYY}/{MM}/{DD}/records/{record_no}/`（判不出→`_inbox/{record_no}/`），寫 `metadata.json`/`text.txt`、清掉淨空暫存目錄；DB photos 改存正式路徑。檔名 `{record_no}-{NN}{ext}` 自帶識別；工地名稱淨化非法字元；搬檔 rename→copy 退路→保留暫存不丟檔。

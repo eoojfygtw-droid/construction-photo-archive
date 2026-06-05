@@ -14,6 +14,11 @@
 - **決策**：工地歸屬依序判斷 manual_code(#A001) > photo_gps > telegram_location > recent_context(2 小時內) > 按鈕詢問使用者；全部判不出 → 存 `data/_inbox/{record_no}` 暫存，不可硬猜。位置訊息＝設定該使用者 recent context（與第 4 層共用機制）。
 - **理由**：不依賴群組 ID（單一群組可能多工地）；硬猜會污染資料、缺失追蹤失準，寧可進 inbox 待人工歸檔。
 
+## 2026-06-05：manual_code 擴充——裸碼也認（比對已登錄工地清單）
+- **決策**：第 1 層 manual_code 由「只認 `#A001`」擴充為「`#A001` 明確標註 **與** 裸碼 `A001` 都認」。裸碼比對規則：取訊息/說明中所有英數整段詞，**只在剛好等於某個已登錄工地代碼時**才命中（不分大小寫、需整段相等，不做模糊比對）；`#標註` 優先於裸碼。
+- **理由**：實機驗收發現工地現場工人多半不會記得打 `#`，原規則會把「今天到 A001」這類正常回報誤判成 unresolved 丟進 _inbox。只比對已知代碼清單，誤判風險低（例如 `A0011` 不會錯認成 `A001`、純文字「現場」仍正確留 unresolved），兼顧好用與正確。
+- **影響範圍**：`server/src/core/resolve/SiteResolver.ts`（`matchManualCode`）。離線 7/7 + 實機皆驗證通過。取代上方「五層優先序」決策中 manual_code 僅 `#A001` 的描述。
+
 ## 2026-06-05：紀錄編號與歸檔日期規則
 - **決策**：紀錄編號＝`{project_code}-{YYYYMMDD}-{3 位流水號}`；歸檔日期以**收件時間**為準，EXIF 拍攝時間另存欄位。資料夾結構 `data/projects/{code}_{name}/{YYYY}/{MM}/{DD}/records/{record_no}/`（photos/ voices/ text.txt metadata.json），無法判斷者進 `data/_inbox/{record_no}/`。
 - **理由**：收件時間穩定可控（EXIF 可能缺或被壓掉）；EXIF 拍攝時間仍保留供稽核。

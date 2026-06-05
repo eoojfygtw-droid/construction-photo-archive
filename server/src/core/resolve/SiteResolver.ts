@@ -4,7 +4,7 @@
 // 判不出（unresolved）時不硬猜，交由上層走 _inbox + 按鈕詢問（下一步）。
 // 成功（前三層）會更新該回報人的最近工地上下文，供第 4 層沿用。
 // ============================================================
-import type { ProjectStore } from '../projects/ProjectStore';
+import type { Project, ProjectStore } from '../projects/ProjectStore';
 import type { UserContextStore } from './UserContextStore';
 
 /** 工地判斷方式 */
@@ -41,8 +41,10 @@ export interface ResolveResult {
   distanceM?: number;
 }
 
-/** 比對手動工地代碼，例如訊息中的 #A001 */
-const MANUAL_CODE_RE = /#([A-Za-z][A-Za-z0-9]*)/;
+/** 取出 #標註 的代碼，例如 #A001 → A001 */
+const TAGGED_CODE_RE = /#([A-Za-z][A-Za-z0-9]*)/;
+/** 取出訊息中所有「英數整段詞」，供裸碼比對（A001、C001、TEST…） */
+const BARE_TOKEN_RE = /[A-Za-z][A-Za-z0-9]*/g;
 
 export class SiteResolver {
   constructor(
@@ -53,15 +55,12 @@ export class SiteResolver {
   resolve(input: ResolveInput): ResolveResult {
     const now = Date.now();
 
-    // 第 1 層：manual_code — 訊息/說明含 #代碼 且該代碼存在
+    // 第 1 層：manual_code — 訊息/說明含工地代碼（#A001 明確標註，或裸碼 A001）
     const codeText = `${input.text ?? ''} ${input.caption ?? ''}`;
-    const m = codeText.match(MANUAL_CODE_RE);
-    if (m) {
-      const proj = this.projects.findByCode(m[1]);
-      if (proj) {
-        this.contexts.set(input.reporterId, proj.code, now);
-        return { projectCode: proj.code, method: 'manual_code' };
-      }
+    const proj = this.matchManualCode(codeText);
+    if (proj) {
+      this.contexts.set(input.reporterId, proj.code, now);
+      return { projectCode: proj.code, method: 'manual_code' };
     }
 
     // 第 2 層：photo_gps — 任一張照片的 EXIF GPS 落在某工地半徑內
@@ -101,5 +100,29 @@ export class SiteResolver {
 
     // 都判不出
     return { projectCode: null, method: 'unresolved' };
+  }
+
+  /**
+   * 比對手動工地代碼，回傳命中的工地（找不到回 undefined）。
+   * 優先序：
+   *   1) #標註：訊息含 #代碼（最明確，例如 #A001）。
+   *   2) 裸碼：訊息中任一「英數整段詞」剛好等於某個已登錄工地代碼（例如 A001、C001）。
+   * 裸碼只比對已知代碼清單、且需整段詞完全相等（不分大小寫），不做模糊比對，
+   * 避免訊息裡剛好出現像代碼的字串造成誤判。
+   */
+  private matchManualCode(text: string): Project | undefined {
+    // 1) #標註優先
+    const tagged = text.match(TAGGED_CODE_RE);
+    if (tagged) {
+      const p = this.projects.findByCode(tagged[1]);
+      if (p) return p;
+    }
+    // 2) 裸碼：逐一取出英數詞，命中已登錄代碼即採用
+    const tokens = text.match(BARE_TOKEN_RE) ?? [];
+    for (const tok of tokens) {
+      const p = this.projects.findByCode(tok);
+      if (p) return p;
+    }
+    return undefined;
   }
 }

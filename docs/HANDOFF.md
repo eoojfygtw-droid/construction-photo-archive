@@ -14,11 +14,12 @@
 1. **初版構想**:AI 影像辨識分類照片 → 修正為「AI 只做輔助,必填欄位靠人工說明」
 2. **ChatGPT 提出 Telegram Bot 方案** → 採納,但確認:單一群組、台灣工地若要全員使用須換 LINE(已用 adapter 介面預留)
 3. **工地判斷改為五層優先序**(不依賴群組 ID):
-   manual_code(#A001)> photo_gps > telegram_location > recent_context(2小時)> 按鈕詢問
+   manual_code(#A001 或裸碼 A001)> photo_gps > telegram_location > recent_context(2小時)> 按鈕詢問
 4. **V0 範圍刪減**:不做 AI 影像辨識、不做語音轉文字、不做 LINE、不做 PDF —— 先把歸檔管線做穩,保留 AIAnalyzer 介面
 5. **決定先做 Web Prototype 驗證流程,再寫正式後端**
 6. **正式後端 V0 開工**(2026-06-05):`server/` 嚴格分版完成 5 片——收訊管線+adapter / 照片下載+EXIF / 相簿合併 / 工地判斷前 4 層 / SQLite 落地;SQLite 改用 Node 內建 `node:sqlite`(原訂 better-sqlite3,Node 24+Windows 編譯易卡);訊息序列化處理確保 recent_context 正確
 7. **正式後端 V0 程式碼完成**(2026-06-05):再完成 5-2 搬檔歸檔 / 5-3a Bot 回覆+✅ 確認 / 5-3b 第 5 層按鈕詢問工地+✏️ 改工地。兩個務實取捨:**改工地不重編 record_no**(只填 project_code、搬檔、resolve_method=manual_pick);**歸檔目錄照片平鋪**於 `records/{record_no}/`(檔名 `{record_no}-NN.ext`,暫不開 `photos/voices/` 子目錄,V1 接語音再分)。離線 smoke test 全綠;🟡 實機驗收(真 Telegram)待跑——即 V0「連續 5 工作天」驗收起點
+8. **正式後端 V0 實機驗收通過**(2026-06-05):真 Telegram(@Cotton19testrobot)實跑,五層工地判斷 + 歸檔 + 按鈕全綠——裸碼/`#`/位置/photo_gps(EXIF GPS,document 上傳保留 EXIF,距離 0m)/recent_context/media group(3 張合併單筆)/✅ 確認/✏️ 改工地(重歸檔、record_no 不重編)逐項對過 DB 與 `data/` 落地。**唯一落差並修正:manual_code 原只認 `#A001`,擴充為裸碼 `A001` 也認(只比對已登錄工地清單,見 DECISIONS)**。下一步進「連續 5 工作天實際使用」驗收期
 
 ## 三、目前狀態
 
@@ -31,7 +32,7 @@
 - 建置驗證通過(tsc + vite build),本機 npm run dev 可跑
 - 規格文件:docs/PRD_v2.md
 
-- **正式後端 V0（`server/`）程式碼完成 8 片（離線驗收全綠，🟡 實機驗收待跑）**：
+- **正式後端 V0（`server/`）8 片完成，🟢 實機驗收通過（2026-06-05，真 Telegram）**：
   1. 收訊管線 + `MessageChannelAdapter` 介面（Telegram long polling → 正規化 `IncomingMessage`）
   2. 照片下載 + EXIF（exifr；document 保留、photo 壓縮掉）
   3. 相簿合併（media group debounce ~2 秒）
@@ -46,7 +47,7 @@
 - 待回饋重點:欄位夠不夠(樓層/工種?)、Bot 回覆格式好不好懂、匯出檔名格式
 
 ### 未開始
-- **V0 實機驗收**:真 Telegram 跑一輪 → 連續 5 工作天實際使用、欄位修正率達標才進 V1
+- **V0「連續 5 工作天」驗收期**:實機驗收已通過(2026-06-05),接著實際使用 5 個工作天、欄位修正率達標才進 V1
 - V1:語音轉文字、後台網頁(改欄位/看照片)、Excel 匯出、狀態流、接 AI(需公司同意)
 
 ## 四、正式後端規格摘要(確認後開發)

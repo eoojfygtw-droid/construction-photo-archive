@@ -1,12 +1,15 @@
 # NEXT_ACTIONS — 工地照片歸檔系統
 
 ## 當前進度
-**正式後端 V0 程式碼完成**（2026-06-05）。`server/`（Node + TS）8 片全部跑通（離線驗收）：收訊管線+adapter → 照片下載+EXIF → 相簿合併 → 工地判斷前 4 層 → SQLite 落地（5-1）→ 搬檔歸檔（5-2）→ Bot 回覆+✅ 確認（5-3a）→ 第 5 層按鈕詢問工地+✏️ 改工地（5-3b）。`npm run typecheck` 通過；離線 smoke test 全綠（archive 16、confirm 13、site 16）。
-🟡 **尚未實機驗收**（真 Telegram）。Web Prototype v0 仍在等同學回饋（GitHub Pages 臨時公開，開發告一段落要收回 private）。
+**正式後端 V0 實機驗收通過**（2026-06-05，真 Telegram `@Cotton19testrobot`）。`server/`（Node + TS）8 片全跑通，五層工地判斷 + 歸檔 + 按鈕逐項對過 DB 與 `data/` 落地（裸碼/`#`/位置/photo_gps(EXIF GPS,document 保留 EXIF,距 0m)/recent_context/media group 3 張合併/✅ 確認/✏️ 改工地重歸檔且 record_no 不重編）。`npm run typecheck` 過；離線 smoke 全綠。
+🟢 已可進「連續 5 工作天」驗收期。實機唯一落差已修正：manual_code 擴充為**裸碼也認**（只比對已登錄工地，見 PROGRESS_LOG/DECISIONS）。Web Prototype v0 仍在等同學回饋（GitHub Pages 臨時公開，開發告一段落要收回 private）。
 
 ## 下一步（依優先序）
-1. **實機驗收 V0**（最優先）：在工作群組真跑一輪——傳文字/照片/位置 → 看終端機建檔 log、`server/data/projects/...` 或 `_inbox/...` 真的長出照片＋`metadata.json` → 按 ✅ 確認、✏️ 改工地、第 5 層選工地各驗一次。沒問題即開始 **「連續 5 個工作天實際使用、欄位修正率達標才進 V1」** 的驗收期。
-   - 前置：`server/.env` 填 `TELEGRAM_BOT_TOKEN`、bot 加進群組（必要時 BotFather `/setprivacy` Disable）、`data/projects.seed.json` 設好工地（或 `/addproject`）。
+1. **進入 V0「連續 5 工作天」驗收期**（最優先）：實機驗收已過，接著**連續 5 個工作天實際使用、欄位修正率達標才進 V1**。
+   - 開始前可清掉今日測試資料（app.db + `data/projects`/`_inbox`/`_staging`），保留 seed，從乾淨狀態起算。
+   - 正式上線建議把 `server/.env` 的 `TELEGRAM_ALLOWED_CHAT_ID` 綁定單一工作群組（目前未設＝接收所有來源）。
+   - 重要照片提醒回報者用「**檔案/文件**」上傳才保留 EXIF（GPS/拍攝時間）；用「照片」會被壓掉。
+   - 開跑前健檢：`npx tsx scripts/preflight.ts`（驗 token、印 bot 名，不外洩 token）。
 2. **等同學確認 prototype 操作流程**（外部回饋）：欄位夠不夠（樓層/工種/區域）、Bot 回覆格式、匯出檔名格式。
 3. **建檔前置**：取得公司對「工程照片送外部 AI API」知情同意（V0 未接 AI，V1 要，先談）；準備工種分類字典 + 嚴重度標準 + 50–100 張歷史照片校準樣本（供 V1 AI few-shot）。
 4. **接戰情室**（時機到再做）：過 META_RULES 第 4 條安全檢查後，於 `ai-warroom-meta/config/projects.json` 加一筆（只放進度統計，照片/個資不放）。
@@ -18,6 +21,8 @@
   - 接法：各寫一個 adapter 實作 `MessageChannelAdapter`（或等價 intake 介面），餵出正規化 `IncomingMessage` 給核心；工地判斷／歸檔／DB 完全不用改。
 
 ## 已完成
+- [x] **正式後端 V0：實機驗收通過**（2026-06-05，真 Telegram）：五層判斷 + 歸檔 + 按鈕全綠，對過 DB 與 `data/` 落地
+- [x] **manual_code 擴充裸碼**：`#A001` 與裸碼 `A001` 都認（只比對已登錄工地清單；離線 7/7 + 實機通過）
 - [x] **正式後端 V0：收訊管線 + adapter 介面**（Telegram long polling → 正規化 IncomingMessage，預留換 LINE）
 - [x] **正式後端 V0：照片下載 + EXIF**（exifr，document 保留 EXIF / photo 壓縮掉；含 HEIC 能力）
 - [x] **正式後端 V0：相簿合併**（media group debounce 約 2 秒合併單筆）
