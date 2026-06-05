@@ -1,0 +1,58 @@
+# === 紅線：照片本身與個資絕不進 Git ===
+# 工地照片常含案場地址、人臉、車牌、客戶名、合約資訊
+# Repo 只放程式碼 + 結構 + docs；真照片/個資放 NAS 或本機/雲端儲存
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tiff
+*.tif
+*.webp
+*.heic
+*.heif
+*.raw
+*.cr2
+*.nef
+*.arw
+*.dng
+*.mp4
+*.mov
+*.avi
+*.zip
+*.rar
+*.7z
+
+# 例外：UI 素材/圖示若確定無敏感資訊，可用 !assets/icons/xxx.png 個別放行
+
+# === 真數字 / 敏感資料 ===
+private-data/
+recon/
+*.csv
+*.xlsx
+*.db
+*.sqlite
+*.sqlite3
+
+# === 機密 ===
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*token*
+*secret*
+
+# === 相依與建置產物 ===
+node_modules/
+dist/
+build/
+.cache/
+*.log
+
+# === OS / 編輯器 ===
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
