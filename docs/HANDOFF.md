@@ -16,7 +16,8 @@
 3. **工地判斷改為五層優先序**(不依賴群組 ID):
    manual_code(#A001)> photo_gps > telegram_location > recent_context(2小時)> 按鈕詢問
 4. **V0 範圍刪減**:不做 AI 影像辨識、不做語音轉文字、不做 LINE、不做 PDF —— 先把歸檔管線做穩,保留 AIAnalyzer 介面
-5. **決定先做 Web Prototype 驗證流程,再寫正式後端**(目前在此階段)
+5. **決定先做 Web Prototype 驗證流程,再寫正式後端**
+6. **正式後端 V0 開工**(2026-06-05):`server/` 嚴格分版完成 5 片——收訊管線+adapter / 照片下載+EXIF / 相簿合併 / 工地判斷前 4 層 / SQLite 落地;SQLite 改用 Node 內建 `node:sqlite`(原訂 better-sqlite3,Node 24+Windows 編譯易卡);訊息序列化處理確保 recent_context 正確(目前在此階段,剩 5-2 搬檔歸檔、5-3 Bot 按鈕確認)
 
 ## 三、目前狀態
 
@@ -29,16 +30,23 @@
 - 建置驗證通過(tsc + vite build),本機 npm run dev 可跑
 - 規格文件:docs/PRD_v2.md
 
+- **正式後端 V0（`server/`）已完成 5 片並實機驗收**：
+  1. 收訊管線 + `MessageChannelAdapter` 介面（Telegram long polling → 正規化 `IncomingMessage`）
+  2. 照片下載 + EXIF（exifr；document 保留、photo 壓縮掉）
+  3. 相簿合併（media group debounce ~2 秒）
+  4. 工地判斷前 4 層 + `/addproject` + 工地清單來源（`data/projects.seed.json`，gitignore 擋）
+  5. SQLite 落地（records/photos/status_logs，編號流水號、回報人、狀態歷程；用 `node:sqlite`）
+
 ### 進行中
-- 同學檢視 prototype 操作流程(GitHub Pages 分享)
+- 同學檢視 prototype 操作流程(GitHub Pages 臨時公開,開發告一段落要收回 private)
 - 待回饋重點:欄位夠不夠(樓層/工種?)、Bot 回覆格式好不好懂、匯出檔名格式
 
 ### 未開始
-- 正式後端(等 prototype 確認後才動工)
+- 後端 V0 剩餘:5-2 正式搬檔歸檔(_inbox/projects + metadata.json/text.txt)、5-3 Bot 回覆 + ✅/✏️ 人工確認(含第 5 層按鈕詢問工地)
 
 ## 四、正式後端規格摘要(確認後開發)
 
-- Node.js + TypeScript、SQLite(better-sqlite3)、Telegram Bot 用 long polling(免公開網址)
+- Node.js + TypeScript、SQLite(~~better-sqlite3~~ 改用 Node 內建 `node:sqlite`,見 DECISIONS)、Telegram Bot 用 long polling(免公開網址)
 - 訊息接收層:MessageChannelAdapter 介面(未來可換 LINE)
 - 資料夾結構:
   ```

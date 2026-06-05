@@ -1,0 +1,21 @@
+{
+  "name": "construction-photo-archive-server",
+  "private": true,
+  "version": "0.0.1",
+  "description": "工地照片歸檔系統 — 正式後端 V0（Telegram long polling 收訊管線）",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "exifr": "^7.1.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.4"
+  }
+}

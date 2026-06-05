@@ -1,0 +1,18 @@
+[
+  {
+    "code": "A001",
+    "name": "示範案A",
+    "centerLat": 24.1618,
+    "centerLng": 120.6469,
+    "radiusMeters": 300,
+    "active": true
+  },
+  {
+    "code": "A002",
+    "name": "示範案B",
+    "centerLat": 24.153,
+    "centerLng": 120.662,
+    "radiusMeters": 250,
+    "active": true
+  }
+]

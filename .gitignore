@@ -28,6 +28,9 @@
 # === 真數字 / 敏感資料 ===
 private-data/
 recon/
+
+# === 後端執行期資料（照片/語音/暫存/text.txt/metadata.json 可能含案場地址、客戶名）紅線全擋 ===
+server/data/
 *.csv
 *.xlsx
 *.db
