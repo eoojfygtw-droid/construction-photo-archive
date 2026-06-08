@@ -2,6 +2,19 @@
 
 > 時間軸。重大進展、踩雷、里程碑往這裡補。詳細規格演進另見 docs/HANDOFF.md「二、規格演進歷程」。
 
+## 2026-06-08 補 V0 驗收期巡檢工具（唯讀 HTML 日報）🟢
+桌機開工。驗收前點出規劃缺口：要「連續 5 工作天」實機驗收,但後台網頁是 V1 範圍,這 5 天只能翻檔案夾 + 開 SQLite GUI,人工根本沒法每天核對「訊息有沒有正確保存分類」。解法**不提前做 V1 後台網頁**（破壞分版）,改補一個輕量唯讀巡檢工具（見 DECISIONS）：
+- **新增 `server/scripts/report.ts`**：以 `readOnly` 開 `app.db`（絕不寫入、不搬檔）,撈指定日期（預設今天,依本機自然日篩 `received_at`）紀錄,產 `data/_reports/report-YYYYMMDD.html`。內容：頂部摘要（共幾筆/已歸檔/_inbox⚠️/待確認）+ `_inbox` 警示區置頂 + 已歸檔依工地分組 + 每筆編號/狀態 badge/判定方式中文化/回報人/時間/文字/縮圖（jpg 直顯、HEIC 佔位卡、缺檔標⚠️、📄文件/🖼照片）。
+- **新增 `server/scripts/smoke-report.ts`**：餵暫存 DB（照片指向 repo 既有測試檔）驗 HTML 與摘要,**14/14 通過**;串入 `npm run test`（現 archive 16 / confirm 13 / site 16 / report 14,全綠）。
+- **`npm run report`** 一行產當日日報;`report -- YYYY-MM-DD` 補產某日。
+- **踩雷**：`report.ts` 漏帶 `photos` 欄位但 `typecheck` 沒抓到 → 發現 `tsconfig.json` 的 `include` 只含 `src/**/*`,**scripts 從來沒被型別檢查**。已補 `scripts/**/*`,順手修掉因此曝出的 `smoke-site.ts` 未用 import（`dirname`）。
+- 瀏覽器實際預覽確認版面正確;jpg 縮圖顯示破圖是因 repo 內測試檔是 16-byte 假位元（非真 JPEG）,實機真照片會正常顯示。
+- 紅線：`server/data/` 整夾被 `.gitignore:33` 擋（巡檢 HTML 含個資縮圖、`app.db`、暫存全不進 git）,已 `check-ignore` 確認。
+
+### 下一步
+- 開始「連續 5 工作天」驗收:每天收工 `npm run report` 開 HTML 掃三點（筆數對不對 / 有沒有掉 _inbox / 判定方式對不對）。
+- 開跑前仍待決定:是否清掉舊測試資料（app.db + projects/_inbox/_staging,保留 seed）從乾淨狀態起算、`TELEGRAM_ALLOWED_CHAT_ID` 綁定單一群組。
+
 ## 2026-06-05 補 `npm run test` 串接三支離線 smoke test 🟢
 `server/package.json` 加 `test` script，以 `&&` 串接既有三支離線 smoke（`tsx scripts/smoke-archive.ts && smoke-confirm.ts && smoke-site.ts`），任一支 `process.exit(1)` 即整體中斷回非零。`npm run test` 全綠：archive 16 / confirm 13 / site 16，0 失敗。解掉「smoke test 只能 `tsx` 直跑、會跳 proceed 詢問」的缺口，後續驗收/CI 一條指令到底。
 

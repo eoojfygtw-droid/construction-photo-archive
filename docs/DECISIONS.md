@@ -19,6 +19,15 @@
 - **理由**：實機驗收發現工地現場工人多半不會記得打 `#`，原規則會把「今天到 A001」這類正常回報誤判成 unresolved 丟進 _inbox。只比對已知代碼清單，誤判風險低（例如 `A0011` 不會錯認成 `A001`、純文字「現場」仍正確留 unresolved），兼顧好用與正確。
 - **影響範圍**：`server/src/core/resolve/SiteResolver.ts`（`matchManualCode`）。離線 7/7 + 實機皆驗證通過。取代上方「五層優先序」決策中 manual_code 僅 `#A001` 的描述。
 
+## 2026-06-08：V0 驗收期用唯讀 HTML 巡檢日報補後台缺口（不提前做 V1 後台網頁）
+- **決策**：V0「連續 5 工作天」驗收期的資料核對,用一支唯讀 CLI 工具 `npm run report` 產 `data/_reports/report-YYYYMMDD.html`,**不提前做 V1 後台網頁**。工具以 `readOnly` 開 `app.db`,只讀不寫、不搬檔,把當日紀錄整理成可一眼核對的單頁（摘要 + _inbox 警示 + 依工地分組 + 縮圖）。
+- **理由**：驗收要靠人每天確認「訊息有沒有正確保存分類」,但純翻檔案夾 + SQLite GUI 不可行;提前做 V1 後台又破壞「V0 驗收未過不進 V1」的分版紀律。唯讀日報是最小代價的中間解——驗收完還能當日常健檢續用,且零寫入風險不會污染驗收資料。
+- **影響範圍**：新增 `server/scripts/report.ts`（含可被 import 的 `generateDailyReport`）、`server/scripts/smoke-report.ts`,`package.json` 加 `report` script 並把 smoke-report 串入 `test`。輸出在 `data/_reports/`（`.gitignore` 已擋）。
+
+## 2026-06-08：scripts/ 納入 typecheck
+- **決策**：`server/tsconfig.json` 的 `include` 從 `["src/**/*"]` 擴為 `["src/**/*", "scripts/**/*"]`,讓 `npm run typecheck` 也檢查 smoke / 工具腳本。
+- **理由**：原本 scripts 完全沒被型別檢查,`report.ts` 漏帶 `photos` 欄位這種錯 `typecheck` 抓不到、要到執行才炸。納入後即時擋掉;代價是會曝出既有腳本的潛在小問題（本次修掉 `smoke-site.ts` 未用的 `dirname` import,因 `noUnusedLocals`）。
+
 ## 2026-06-05：紀錄編號與歸檔日期規則
 - **決策**：紀錄編號＝`{project_code}-{YYYYMMDD}-{3 位流水號}`；歸檔日期以**收件時間**為準，EXIF 拍攝時間另存欄位。資料夾結構 `data/projects/{code}_{name}/{YYYY}/{MM}/{DD}/records/{record_no}/`（photos/ voices/ text.txt metadata.json），無法判斷者進 `data/_inbox/{record_no}/`。
 - **理由**：收件時間穩定可控（EXIF 可能缺或被壓掉）；EXIF 拍攝時間仍保留供稽核。

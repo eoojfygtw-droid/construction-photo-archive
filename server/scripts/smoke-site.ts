@@ -6,7 +6,7 @@
 // 用法：npx tsx scripts/smoke-site.ts
 // ============================================================
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { Db } from '../src/db';
 import type { IncomingCallback } from '../src/channels/types';
 import type { OutgoingButton } from '../src/channels/MessageChannelAdapter';

@@ -2,14 +2,17 @@
 
 ## 當前進度
 **正式後端 V0 實機驗收通過**（2026-06-05，真 Telegram `@Cotton19testrobot`）。`server/`（Node + TS）8 片全跑通，五層工地判斷 + 歸檔 + 按鈕逐項對過 DB 與 `data/` 落地（裸碼/`#`/位置/photo_gps(EXIF GPS,document 保留 EXIF,距 0m)/recent_context/media group 3 張合併/✅ 確認/✏️ 改工地重歸檔且 record_no 不重編）。`npm run typecheck` 過；離線 smoke 全綠。
-🟢 已可進「連續 5 工作天」驗收期。實機唯一落差已修正：manual_code 擴充為**裸碼也認**（只比對已登錄工地，見 PROGRESS_LOG/DECISIONS）。Web Prototype v0 仍在等同學回饋（GitHub Pages 臨時公開，開發告一段落要收回 private）。
+🟢 已可進「連續 5 工作天」驗收期。實機唯一落差已修正：manual_code 擴充為**裸碼也認**（只比對已登錄工地，見 PROGRESS_LOG/DECISIONS）。
+**2026-06-08 補驗收期巡檢工具**：`npm run report` 產唯讀 HTML 日報（`data/_reports/report-YYYYMMDD.html`），補上「V0 沒後台網頁、5 天怎麼核對資料」的缺口（見 DECISIONS，不提前做 V1 後台）。離線 smoke 14/14、四支全綠、typecheck 過（scripts 已納入檢查）。
+Web Prototype v0 仍在等同學回饋（GitHub Pages 臨時公開，開發告一段落要收回 private）。
 
 ## 下一步（依優先序）
 1. **進入 V0「連續 5 工作天」驗收期**（最優先）：實機驗收已過，接著**連續 5 個工作天實際使用、欄位修正率達標才進 V1**。
-   - 開始前可清掉今日測試資料（app.db + `data/projects`/`_inbox`/`_staging`），保留 seed，從乾淨狀態起算。
+   - 開始前可清掉今日測試資料（app.db + `data/projects`/`_inbox`/`_staging`），保留 seed，從乾淨狀態起算。（**尚未執行**，待決定）
    - 正式上線建議把 `server/.env` 的 `TELEGRAM_ALLOWED_CHAT_ID` 綁定單一工作群組（目前未設＝接收所有來源）。
    - 重要照片提醒回報者用「**檔案/文件**」上傳才保留 EXIF（GPS/拍攝時間）；用「照片」會被壓掉。
    - 開跑前健檢：`npx tsx scripts/preflight.ts`（驗 token、印 bot 名，不外洩 token）。
+   - **每日核對**：每天收工 `cd server && npm run report`（或 `npm run report -- YYYY-MM-DD`），瀏覽器開 `data/_reports/report-YYYYMMDD.html`，掃三點 → ①筆數對不對 ②有沒有掉進 _inbox ③判定方式/工地對不對。發現錯誤就記下來算欄位修正率。
 2. **等同學確認 prototype 操作流程**（外部回饋）：欄位夠不夠（樓層/工種/區域）、Bot 回覆格式、匯出檔名格式。
 3. **建檔前置**：取得公司對「工程照片送外部 AI API」知情同意（V0 未接 AI，V1 要，先談）；準備工種分類字典 + 嚴重度標準 + 50–100 張歷史照片校準樣本（供 V1 AI few-shot）。
 4. **接戰情室**（時機到再做）：過 META_RULES 第 4 條安全檢查後，於 `ai-warroom-meta/config/projects.json` 加一筆（只放進度統計，照片/個資不放）。
