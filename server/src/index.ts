@@ -22,9 +22,33 @@ import {
   promptConfirm,
 } from './core/confirm/confirmFlow';
 import { buildSitePickerButtons } from './core/confirm/siteFlow';
+import { Notifier } from './ops/notifier';
 
 async function main(): Promise<void> {
   const config = loadConfig(); // 缺 token 會在這裡 fail loudly
+  const botStartedAt = Date.now(); // bot 啟動時刻（「有沒有偷懶」查詢用來算工作時長）
+
+  // 存活通知 + 外部心跳（死手開關）；未設對應 env 則自動略過
+  const notifier = new Notifier({
+    botToken: config.telegramBotToken,
+    adminChatId: config.telegramAdminChatId,
+    healthcheckUrl: config.healthcheckUrl,
+    heartbeatIntervalSec: config.healthcheckIntervalSec,
+  });
+
+  // 程式級崩潰（未捕捉例外/未處理 rejection）：盡力發通知 + 標記心跳失敗後退出。
+  // 註：OS 級斷電/當死無法靠自己發訊息,那種情況靠 healthchecks.io 心跳中斷觸發外部警報。
+  const onFatal = async (label: string, err: unknown): Promise<void> => {
+    logger.error(label, err instanceof Error ? (err.stack ?? err.message) : err);
+    notifier.stopTimers();
+    await notifier.notify(
+      `⚠️ 報告老闆我出事了\n原因：${err instanceof Error ? err.message : String(err)}\n時間：${nowLocal()}`,
+    );
+    await notifier.ping('/fail');
+    process.exit(1);
+  };
+  process.on('uncaughtException', (err) => void onFatal('uncaughtException', err));
+  process.on('unhandledRejection', (err) => void onFatal('unhandledRejection', err));
 
   // SQLite
   const db = new Db();
@@ -41,8 +65,26 @@ async function main(): Promise<void> {
 
   // 一筆紀錄就緒後的處理：指令優先 → 下載照片+EXIF → 工地判斷
   const onRecordReady = async (msg: IncomingMessage) => {
+    // 「有沒有偷懶」查詢：工作群/運維群都可問，回報目前工作時長
+    if (isSlackingQuery(msg.text)) {
+      const mins = Math.round((Date.now() - botStartedAt) / 60000);
+      await adapter.sendMessage(
+        msg.chatId,
+        `報告老闆，我沒偷懶，我已經工作 ${mins} 分鐘了 💪`,
+      );
+      return;
+    }
+
     // 指令（/addproject、/help…）優先，不當成一筆紀錄
     if (await handleCommand(adapter, msg, projectStore)) return;
+
+    // 非工作群來源（例如運維群閒聊）只回應上面的查詢/指令，不進歸檔流程
+    if (
+      config.telegramAllowedChatId &&
+      msg.chatId !== config.telegramAllowedChatId
+    ) {
+      return;
+    }
 
     logger.info('紀錄就緒', {
       來源: msg.channel,
@@ -176,6 +218,10 @@ async function main(): Promise<void> {
   // 優雅關閉：Ctrl+C / 終止訊號時停止收訊再退出
   const shutdown = async () => {
     logger.info('收到結束訊號，停止收訊…');
+    notifier.stopTimers();
+    await notifier.notify(
+      `🔴 報告老闆我下班了\n時間：${nowLocal()}`,
+    );
     aggregator.flushAll(); // 把尚在 debounce 等待的相簿先合併送出
     await adapter.stop();
     db.close();
@@ -184,7 +230,27 @@ async function main(): Promise<void> {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
+  // 啟動通知 + 開始心跳,然後進 long polling（start() 會阻塞直到 stop()）。
+  // 重開機後 bot 自動爬起來就會發這則,等同「機器已恢復」的通知。
+  await notifier.notify(
+    `🟢 報告老闆我上班了\n時間：${nowLocal()}`,
+  );
+  notifier.startHeartbeat();
+  notifier.startUptimeReports(); // 3〜5 小時隨機回報工作時長
+
   await adapter.start();
+}
+
+/** 是不是在問「有沒有偷懶」（訊息含「偷懶」二字即觸發） */
+function isSlackingQuery(text?: string): boolean {
+  return !!text && text.includes('偷懶');
+}
+
+/** 本機時間字串 YYYY-MM-DD HH:MM:SS（通知訊息用,讓訊息本身自帶時間） */
+function nowLocal(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
 main().catch((err) => {

@@ -2,6 +2,21 @@
 
 > 時間軸。重大進展、踩雷、里程碑往這裡補。詳細規格演進另見 docs/HANDOFF.md「二、規格演進歷程」。
 
+## 2026-06-08 V0 進入 5 工作天驗收期 + bot 背景常駐 + 存活監控 🟢
+桌機開工續做。**正式進入「連續 5 個工作天」驗收期**：今日累積 7 筆（A001×1 + C001×6，含 manual_code / photo_gps(距 0m) / recent_context）算**第 1 天，不清資料**。把 bot 從「掛在對話前景」升級成正式常駐 + 自我監控：
+- **設定**：`TELEGRAM_ALLOWED_CHAT_ID` 綁定單一工作群（值在 .env）；`npx tsx scripts/preflight.ts` 通過（bot=@Cotton19testrobot）。
+- **常駐**：Windows 排程 `ConstructionPhotoBot`——背景 S4U（無視窗、開機自啟、崩潰每分鐘自動重啟），動作 `run-bot.cmd`→`npm start`（正式模式，非 dev/watch）。
+- **存活監控（新 `src/ops/notifier.ts`，與核心解耦、env-gated）**：Telegram 狀態通知 🟢上班/🔴下班/⚠️出事 + 每 3〜5 小時隨機「工作 N 分鐘」；healthchecks.io 心跳（60s，斷電/當機外部警報）。通知與警報都進獨立「機器人運維群」(`TELEGRAM_ADMIN_CHAT_ID`)，與工作群分離。死手開關已實測 down→up 警報送達運維群。
+- **純中文無雜訊活動紀錄**：`logger` 加寫 `data/_logs/activity.log`（排除 npm/node 雜訊）+ `view-log.cmd` 即時監看視窗。
+- **「偷懶」互動**：訊息含「偷懶」→ bot 回「報告老闆我沒偷懶，已經工作 N 分鐘了」；adapter 放行運維群以便互動，但只有工作群訊息會被歸檔。
+- **防遺忘三道保險**：①每幾小時主動回報刷存在感 ②一鍵移除 `remove-bot.cmd` ③Google 行事曆 6/13 09:00 提醒決定保留或移除。
+- **踩雷**：(a) 含中文的 `.ps1`/`.cmd` 被 Windows PowerShell 5.1 / cmd 以 Big5 讀爛（`'ndows' 不是內部命令`）→ 改純 ASCII 解決；(b) 經互動主控台 `Start-ScheduledTask` 啟動的 bot 會被主控台關閉時的 Ctrl+C 連帶結束（exit 0，排程「崩潰才重啟」不觸發）→ 改 S4U 背景執行（無主控台）根治。
+- 全程 `typecheck` + 4 支 smoke（16/13/16/14）全綠；紅線：token/chat id/心跳網址只在 .env、照片/DB/log/活動紀錄在 `server/data/`，啟動移除腳本含本機絕對路徑 → 皆 gitignore。
+
+### 下一步
+- 跑滿連續 5 個工作天，每天 `npm run report` 核對三點；持續觀察 recent_context 2 小時沿用是否在實際節奏下造成誤歸（見 DECISIONS）。
+- 6/13 行事曆提醒到時決定：bot 保留續跑 / 移除（`remove-bot.cmd`）；驗收欄位修正率達標才談進 V1。
+
 ## 2026-06-08 補 V0 驗收期巡檢工具（唯讀 HTML 日報）🟢
 桌機開工。驗收前點出規劃缺口：要「連續 5 工作天」實機驗收,但後台網頁是 V1 範圍,這 5 天只能翻檔案夾 + 開 SQLite GUI,人工根本沒法每天核對「訊息有沒有正確保存分類」。解法**不提前做 V1 後台網頁**（破壞分版）,改補一個輕量唯讀巡檢工具（見 DECISIONS）：
 - **新增 `server/scripts/report.ts`**：以 `readOnly` 開 `app.db`（絕不寫入、不搬檔）,撈指定日期（預設今天,依本機自然日篩 `received_at`）紀錄,產 `data/_reports/report-YYYYMMDD.html`。內容：頂部摘要（共幾筆/已歸檔/_inbox⚠️/待確認）+ `_inbox` 警示區置頂 + 已歸檔依工地分組 + 每筆編號/狀態 badge/判定方式中文化/回報人/時間/文字/縮圖（jpg 直顯、HEIC 佔位卡、缺檔標⚠️、📄文件/🖼照片）。

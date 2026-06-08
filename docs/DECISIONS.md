@@ -28,6 +28,20 @@
 - **決策**：`server/tsconfig.json` 的 `include` 從 `["src/**/*"]` 擴為 `["src/**/*", "scripts/**/*"]`,讓 `npm run typecheck` 也檢查 smoke / 工具腳本。
 - **理由**：原本 scripts 完全沒被型別檢查,`report.ts` 漏帶 `photos` 欄位這種錯 `typecheck` 抓不到、要到執行才炸。納入後即時擋掉;代價是會曝出既有腳本的潛在小問題（本次修掉 `smoke-site.ts` 未用的 `dirname` import,因 `noUnusedLocals`）。
 
+## 2026-06-08：bot 正式部署為 Windows 背景常駐排程（非前景視窗）
+- **決策**：驗收期 bot 以 Windows 排程 `ConstructionPhotoBot` 常駐——S4U（不論登入與否、背景無視窗）、開機自啟、崩潰每分鐘自動重啟，動作 `run-bot.cmd`→`npm start`（正式模式）。啟動/註冊/移除腳本（run-bot.cmd、register/unregister-bot-task.ps1、view-log.cmd、remove-bot.cmd）含本機絕對路徑，**gitignore 不入庫**（換機需重生）。
+- **理由**：掛在對話/前景主控台會被誤關或隨對話結束而停；經互動主控台啟動還會被主控台關閉時的 Ctrl+C 連帶結束。背景 S4U 無視窗、不可誤關、開機即起，最適合 5 天無人值守常駐。
+- **影響範圍**：新增本機腳本（不入庫）；需使用者本人執行註冊（建立持久化動作被 AI 安全機制擋下，由使用者跑 `register-bot-task.ps1`）。
+
+## 2026-06-08：加存活監控——Telegram 狀態通知 + healthchecks.io 死手開關
+- **決策**：新增 `server/src/ops/notifier.ts`（與核心解耦、全 env-gated）。bot 啟動/停止/崩潰發 Telegram 通知，並每 3〜5 小時隨機回報工作時長；同時每 60s ping healthchecks.io。通知與警報都進獨立「運維群」(`TELEGRAM_ADMIN_CHAT_ID`)，與工作群 (`TELEGRAM_ALLOWED_CHAT_ID`) 分離。另加：訊息含「偷懶」→ 回報工作時長的互動。
+- **理由**：5 天無人值守須知道 bot 是否活著。bot 自報涵蓋重啟/停止/程式崩潰；但「整台機器斷電/當死」自己發不了訊息，必須靠外部心跳中斷由 healthchecks 觸發警報（死手開關）。通知獨立群避免洗工作群。
+- **影響範圍**：`notifier.ts`（新）、`index.ts`（啟動/關閉/崩潰掛鉤 + 偷懶查詢 + 非工作群不歸檔守門）、`env.ts`（+ admin chat / healthcheck url / interval）、`TelegramAdapter.ts`（放行運維群來源以供互動，歸檔仍只限工作群）、`logger.ts`（加寫純中文 `activity.log`）。`.env.example` 補三個選填欄位。
+
+## 2026-06-08：recent_context 2 小時沿用——維持現狀，驗收期觀察
+- **決策**：第 4 層 recent_context「2 小時內沿用最近工地」**維持不變**（不縮短時間窗、不改成強制標代碼）。
+- **理由**：實機發現「離開工地後 2 小時內亂傳的無定位照片會沿用到上一個工地」。確認這是設計內的便利（同工地連拍免重複標代碼）兼風險，使用者決定先維持、**驗收期實際觀察**是否造成誤歸，5 天後再決定是否調整。可調點：`SiteResolver` 時間窗 / 是否保留第 4 層。
+
 ## 2026-06-05：紀錄編號與歸檔日期規則
 - **決策**：紀錄編號＝`{project_code}-{YYYYMMDD}-{3 位流水號}`；歸檔日期以**收件時間**為準，EXIF 拍攝時間另存欄位。資料夾結構 `data/projects/{code}_{name}/{YYYY}/{MM}/{DD}/records/{record_no}/`（photos/ voices/ text.txt metadata.json），無法判斷者進 `data/_inbox/{record_no}/`。
 - **理由**：收件時間穩定可控（EXIF 可能缺或被壓掉）；EXIF 拍攝時間仍保留供稽核。

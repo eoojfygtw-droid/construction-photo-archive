@@ -78,6 +78,7 @@ export class TelegramAdapter implements MessageChannelAdapter {
   private readonly fileApiBase: string; // 下載原檔用的網址前綴
   private readonly pollTimeout: number;
   private readonly allowedChatId: string;
+  private readonly adminChatId: string; // 運維群：可問互動指令（如「偷懶」），但不歸檔
 
   private handler: IncomingMessageHandler | null = null;
   private callbackHandler: IncomingCallbackHandler | null = null;
@@ -89,6 +90,7 @@ export class TelegramAdapter implements MessageChannelAdapter {
     this.fileApiBase = `https://api.telegram.org/file/bot${config.telegramBotToken}`;
     this.pollTimeout = config.telegramPollTimeout;
     this.allowedChatId = config.telegramAllowedChatId;
+    this.adminChatId = config.telegramAdminChatId;
   }
 
   onMessage(handler: IncomingMessageHandler): void {
@@ -150,8 +152,13 @@ export class TelegramAdapter implements MessageChannelAdapter {
   private async handleRawMessage(m: TgMessage): Promise<void> {
     const chatId = String(m.chat.id);
 
-    // 來源過濾：有設定 allowedChatId 時，非該群組的訊息直接略過
-    if (this.allowedChatId && chatId !== this.allowedChatId) {
+    // 來源過濾：有設定 allowedChatId 時，只放行「工作群」與「運維群」，其餘略過。
+    // 運維群放行是為了能回應互動查詢（如「偷懶」）；是否歸檔由核心層另外把關。
+    if (
+      this.allowedChatId &&
+      chatId !== this.allowedChatId &&
+      chatId !== this.adminChatId
+    ) {
       logger.warn('略過非允許來源的訊息', { chatId });
       return;
     }

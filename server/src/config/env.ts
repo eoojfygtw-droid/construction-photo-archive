@@ -11,6 +11,12 @@ export interface AppConfig {
   telegramAllowedChatId: string;
   /** long polling 等待秒數 */
   telegramPollTimeout: number;
+  /** 狀態/警報通知要發到的 chat id；空字串＝不發狀態通知 */
+  telegramAdminChatId: string;
+  /** healthchecks.io 心跳 ping 網址；空字串＝不發心跳 */
+  healthcheckUrl: string;
+  /** 心跳間隔（秒），預設 60，最小 10 */
+  healthcheckIntervalSec: number;
 }
 
 /**
@@ -31,9 +37,17 @@ export function loadConfig(): AppConfig {
   const pollTimeout =
     Number.isFinite(rawTimeout) && rawTimeout > 0 ? Math.floor(rawTimeout) : 30;
 
+  // 心跳間隔：非法或過小（<10 秒）退回預設 60 秒，避免過度頻繁
+  const rawHb = Number(process.env.HEALTHCHECK_INTERVAL_SEC);
+  const healthcheckIntervalSec =
+    Number.isFinite(rawHb) && rawHb >= 10 ? Math.floor(rawHb) : 60;
+
   return {
     telegramBotToken: token,
     telegramAllowedChatId: (process.env.TELEGRAM_ALLOWED_CHAT_ID ?? '').trim(),
     telegramPollTimeout: pollTimeout,
+    telegramAdminChatId: (process.env.TELEGRAM_ADMIN_CHAT_ID ?? '').trim(),
+    healthcheckUrl: (process.env.HEALTHCHECK_URL ?? '').trim(),
+    healthcheckIntervalSec,
   };
 }
