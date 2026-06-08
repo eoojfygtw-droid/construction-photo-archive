@@ -13,9 +13,9 @@ import { distanceMeters } from './geo';
 export interface Project {
   code: string; // 工地代碼，例如 A001
   name: string; // 工地名稱
-  centerLat: number; // 中心點緯度
-  centerLng: number; // 中心點經度
-  radiusMeters: number; // 判斷半徑（公尺）
+  centerLat: number | null; // 中心點緯度（null＝未設座標，不做 GPS 自動判定）
+  centerLng: number | null; // 中心點經度（null＝未設）
+  radiusMeters: number | null; // 判斷半徑（公尺）（null＝未設）
   active: boolean; // 是否啟用
 }
 
@@ -64,6 +64,10 @@ export class ProjectStore {
     let best: GpsMatch | null = null;
     for (const p of this.projects) {
       if (!p.active) continue;
+      // 未設座標的工地不參與 GPS 判定（只能靠 #代碼 / recent_context）
+      if (p.centerLat == null || p.centerLng == null || p.radiusMeters == null) {
+        continue;
+      }
       const d = distanceMeters(lat, lng, p.centerLat, p.centerLng);
       if (d <= p.radiusMeters && (best === null || d < best.distanceM)) {
         best = { project: p, distanceM: d };
@@ -77,5 +81,22 @@ export class ProjectStore {
     this.projects.push(project);
     await mkdir(dirname(SEED_PATH), { recursive: true });
     await writeFile(SEED_PATH, JSON.stringify(this.projects, null, 2), 'utf8');
+  }
+
+  /** 設定/更新某工地的中心座標與半徑（傳「位置」設 GPS 用），寫回 seed。找不到代碼回 false */
+  async setCenter(
+    code: string,
+    lat: number,
+    lng: number,
+    radiusMeters: number,
+  ): Promise<boolean> {
+    const p = this.findByCode(code);
+    if (!p) return false;
+    p.centerLat = lat;
+    p.centerLng = lng;
+    p.radiusMeters = radiusMeters;
+    await mkdir(dirname(SEED_PATH), { recursive: true });
+    await writeFile(SEED_PATH, JSON.stringify(this.projects, null, 2), 'utf8');
+    return true;
   }
 }

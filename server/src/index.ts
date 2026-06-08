@@ -12,6 +12,7 @@ import type { IncomingMessage } from './channels/types';
 import { intakePhotos, type IntakeResult } from './core/media/photoIntake';
 import { MediaGroupAggregator } from './core/ingest/MediaGroupAggregator';
 import { ProjectStore } from './core/projects/ProjectStore';
+import { PendingSiteStore } from './core/projects/PendingSiteStore';
 import { UserContextStore } from './core/resolve/UserContextStore';
 import { SiteResolver } from './core/resolve/SiteResolver';
 import { handleCommand } from './core/commands/handleCommand';
@@ -58,6 +59,7 @@ async function main(): Promise<void> {
   const projectStore = new ProjectStore();
   await projectStore.load();
   const contextStore = new UserContextStore();
+  const pendingSite = new PendingSiteStore(); // 剛新增、待傳位置設座標的工地
   const resolver = new SiteResolver(projectStore, contextStore);
 
   // 目前綁 Telegram；未來換 LINE 只要換成另一個 adapter 實作，以下程式碼不動
@@ -76,7 +78,7 @@ async function main(): Promise<void> {
     }
 
     // 指令（/addproject、/help…）優先，不當成一筆紀錄
-    if (await handleCommand(adapter, msg, projectStore)) return;
+    if (await handleCommand(adapter, msg, projectStore, pendingSite)) return;
 
     // 非工作群來源（例如運維群閒聊）只回應上面的查詢/指令，不進歸檔流程
     if (
@@ -84,6 +86,32 @@ async function main(): Promise<void> {
       msg.chatId !== config.telegramAllowedChatId
     ) {
       return;
+    }
+
+    // 剛用 /新增工地 加好「無座標」工地的人，接著傳「位置」→ 設成該工地中心（開 GPS 自動歸檔）
+    if (msg.location && msg.photos.length === 0) {
+      const pendingCode = pendingSite.take(msg.reporterId, Date.now());
+      if (pendingCode) {
+        const ok = await projectStore.setCenter(
+          pendingCode,
+          msg.location.latitude,
+          msg.location.longitude,
+          300,
+        );
+        if (ok) {
+          logger.info('已設定工地中心', {
+            工地: pendingCode,
+            座標: `${msg.location.latitude},${msg.location.longitude}`,
+          });
+          await adapter.sendMessage(
+            msg.chatId,
+            `✅ 已把 ${pendingCode} 的中心設為你傳的位置（半徑 300m）。之後落在範圍內、用「檔案」上傳的照片會自動歸到 ${pendingCode}。`,
+          );
+        } else {
+          await adapter.sendMessage(msg.chatId, `找不到工地 ${pendingCode}，請重新 /新增工地。`);
+        }
+        return;
+      }
     }
 
     logger.info('紀錄就緒', {

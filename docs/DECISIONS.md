@@ -42,6 +42,11 @@
 - **決策**：第 4 層 recent_context「2 小時內沿用最近工地」**維持不變**（不縮短時間窗、不改成強制標代碼）。
 - **理由**：實機發現「離開工地後 2 小時內亂傳的無定位照片會沿用到上一個工地」。確認這是設計內的便利（同工地連拍免重複標代碼）兼風險，使用者決定先維持、**驗收期實際觀察**是否造成誤歸，5 天後再決定是否調整。可調點：`SiteResolver` 時間窗 / 是否保留第 4 層。
 
+## 2026-06-08：/新增工地 座標可選 + 傳位置設中心（現場可用）
+- **決策**：`/新增工地`（`/addproject` 的中文別名，好記）改為**最少給「代碼 名稱」即可**，座標可省。省略座標時先建工地（GPS 自動判定關閉，仍可用 `#代碼` / recent_context 歸檔）並記 pending；同一回報人 **10 分鐘內傳一個「位置」📍** 即把該座標設為工地中心（半徑 300m，開 GPS 自動判定）。一次帶 `代碼 名稱 緯度 經度 [半徑]` 仍可用。
+- **理由**：原本強制現場使用者手打經緯度完全不可行（使用者直接反映）。改成「打代碼名稱、要 GPS 就傳定位」最貼合手機現場操作；精確座標也可由助理代查後用完整指令補。
+- **影響範圍**：`Project` 的 center/radius 改 `number | null`；`ProjectStore.findByGps` 跳過無座標工地、新增 `setCenter()`；新增 `PendingSiteStore`；`handleCommand`（2 參數流程 + 中文別名）；`index.ts`（傳位置設中心、handleCommand 多傳 pending）。
+
 ## 2026-06-05：紀錄編號與歸檔日期規則
 - **決策**：紀錄編號＝`{project_code}-{YYYYMMDD}-{3 位流水號}`；歸檔日期以**收件時間**為準，EXIF 拍攝時間另存欄位。資料夾結構 `data/projects/{code}_{name}/{YYYY}/{MM}/{DD}/records/{record_no}/`（photos/ voices/ text.txt metadata.json），無法判斷者進 `data/_inbox/{record_no}/`。
 - **理由**：收件時間穩定可控（EXIF 可能缺或被壓掉）；EXIF 拍攝時間仍保留供稽核。

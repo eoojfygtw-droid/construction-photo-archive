@@ -2,6 +2,11 @@
 
 > 時間軸。重大進展、踩雷、里程碑往這裡補。詳細規格演進另見 docs/HANDOFF.md「二、規格演進歷程」。
 
+## 2026-06-08 新增工地改為現場可用（座標可選 / 傳位置設中心）+ 中文指令別名 🟢
+驗收期間點出 `/addproject` 強制手打經緯度對工地現場根本不可行。改成：①指令加中文別名 **`/新增工地`**（`/addproject` 仍可用）；②**座標可選**——`/新增工地 代碼 名稱` 就能建（先用 `#代碼` 歸檔），加完**傳一個「位置」📍**即自動設成工地中心、開 GPS 自動歸檔；③一次帶全 `代碼 名稱 緯度 經度 [半徑]` 仍可用（供代查座標後貼）。新增 `PendingSiteStore`、`ProjectStore.setCenter`，`Project` 的 center/radius 改 `number | null`。typecheck + 4 支 smoke（16/13/16/14）全綠。
+- 待補（V0 可做）：**錄音存檔**——把 Telegram 語音/音訊當媒體歸檔（沿用照片管線、`upload_type=voice`、不用改表），**不轉文字**；轉逐字稿（Whisper）仍 V1、需公司同意送外部 AI。見 NEXT_ACTIONS 規劃中。
+> 註：以上程式改動需 `restart-bot.cmd` 套用到背景 bot 後才生效。
+
 ## 2026-06-08 V0 進入 5 工作天驗收期 + bot 背景常駐 + 存活監控 🟢
 桌機開工續做。**正式進入「連續 5 個工作天」驗收期**：今日累積 7 筆（A001×1 + C001×6，含 manual_code / photo_gps(距 0m) / recent_context）算**第 1 天，不清資料**。把 bot 從「掛在對話前景」升級成正式常駐 + 自我監控：
 - **設定**：`TELEGRAM_ALLOWED_CHAT_ID` 綁定單一工作群（值在 .env）；`npx tsx scripts/preflight.ts` 通過（bot=@Cotton19testrobot）。

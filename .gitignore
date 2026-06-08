@@ -59,6 +59,8 @@ server/view-log.cmd
 server/remove-bot.cmd
 server/register-bot-task.ps1
 server/unregister-bot-task.ps1
+server/restart-bot.cmd
+server/restart-bot.ps1
 
 # === OS / 編輯器 ===
 Thumbs.db
