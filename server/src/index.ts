@@ -28,6 +28,15 @@ import {
   isLocationCallback,
   handleLocationCallback,
 } from './core/confirm/locationFlow';
+import {
+  LastRecordStore,
+  AppendStore,
+  isAppendCandidate,
+  findAppendTarget,
+  appendToRecord,
+  isSplitCallback,
+  handleSplitCallback,
+} from './core/records/appendFlow';
 import { Notifier } from './ops/notifier';
 
 async function main(): Promise<void> {
@@ -66,6 +75,8 @@ async function main(): Promise<void> {
   const contextStore = new UserContextStore();
   const pendingSite = new PendingSiteStore(); // 剛新增、待傳位置設座標的工地
   const resolver = new SiteResolver(projectStore, contextStore);
+  const lastRecords = new LastRecordStore(); // 追加合併：每人最近一筆紀錄
+  const appendStore = new AppendStore(); // 追加合併：拆單反悔用
 
   // 目前綁 Telegram；未來換 LINE 只要換成另一個 adapter 實作，以下程式碼不動
   const adapter: MessageChannelAdapter = new TelegramAdapter(config);
@@ -129,6 +140,33 @@ async function main(): Promise<void> {
     if (isBareLocation) {
       await promptBareLocation(adapter, resolver, projectStore, msg);
       return;
+    }
+
+    // 追加合併：照片建檔後 10 分鐘內接著傳的純語音/純文字 → 併入上一筆，不開新紀錄
+    if (isAppendCandidate(msg)) {
+      const targetId = findAppendTarget(lastRecords, db, resolver, msg, Date.now());
+      if (targetId != null) {
+        let appendIntake: IntakeResult[] = [];
+        try {
+          appendIntake = await intakePhotos(adapter, msg);
+        } catch (err) {
+          logger.error(
+            '追加媒體下載失敗',
+            err instanceof Error ? err.message : err,
+          );
+        }
+        await appendToRecord(
+          adapter,
+          db,
+          lastRecords,
+          appendStore,
+          msg,
+          appendIntake,
+          targetId,
+          Date.now(),
+        );
+        return;
+      }
     }
 
     logger.info('紀錄就緒', {
@@ -199,6 +237,9 @@ async function main(): Promise<void> {
         result,
         projectStore,
       );
+      // 記住這筆為該回報人的「最近紀錄」（10 分鐘內的語音/文字會自動併入）
+      lastRecords.set(msg.reporterId, recordId, Date.now());
+
       logger.info('已建檔歸檔', {
         紀錄編號: recordNo,
         工地: result.projectCode ?? '（未歸檔/_inbox）',
@@ -267,6 +308,11 @@ async function main(): Promise<void> {
           cb,
           Date.now(),
         );
+        return;
+      }
+      // sp:… 為「拆成新筆」（追加合併的反悔鈕）
+      if (isSplitCallback(cb)) {
+        await handleSplitCallback(adapter, db, lastRecords, appendStore, cb, Date.now());
         return;
       }
       await handleConfirmCallback(adapter, db, projectStore, cb);

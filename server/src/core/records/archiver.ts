@@ -265,7 +265,7 @@ export async function reassignArchive(input: ReassignInput): Promise<ReassignRes
 }
 
 /** 歸檔目錄參數 */
-interface RecordDirInput {
+export interface RecordDirInput {
   recordNo: string;
   projectCode: string | null;
   projectName: string | null;
@@ -274,8 +274,8 @@ interface RecordDirInput {
   dd: string;
 }
 
-/** 依工地判定結果決定歸檔目錄 */
-function recordDir(input: RecordDirInput): string {
+/** 依工地判定結果決定歸檔目錄（appendFlow 拆單時也要算新目錄，故匯出） */
+export function recordDir(input: RecordDirInput): string {
   if (input.projectCode) {
     const folder = projectFolder(input.projectCode, input.projectName);
     return join(
@@ -311,8 +311,9 @@ function sanitizeName(s: string): string {
 /**
  * 搬檔：先試 rename（同磁碟最快）；跨磁碟（EXDEV）或目的已存在等情況
  * 退回 copy + unlink。任一步都失敗則往上拋，由呼叫端保留暫存路徑。
+ * （appendFlow 追加/拆單搬檔沿用，故匯出）
  */
-async function moveFile(src: string, dest: string): Promise<void> {
+export async function moveFile(src: string, dest: string): Promise<void> {
   try {
     await rename(src, dest);
   } catch {

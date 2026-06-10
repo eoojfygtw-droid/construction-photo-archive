@@ -109,8 +109,9 @@ export class SiteResolver {
    *   2) 裸碼：訊息中任一「英數整段詞」剛好等於某個已登錄工地代碼（例如 A001、C001）。
    * 裸碼只比對已知代碼清單、且需整段詞完全相等（不分大小寫），不做模糊比對，
    * 避免訊息裡剛好出現像代碼的字串造成誤判。
+   * （公開供 appendFlow 判斷「這段文字是不是切換工地」，含代碼的訊息不追加合併）
    */
-  private matchManualCode(text: string): Project | undefined {
+  matchManualCode(text: string): Project | undefined {
     // 1) #標註優先
     const tagged = text.match(TAGGED_CODE_RE);
     if (tagged) {

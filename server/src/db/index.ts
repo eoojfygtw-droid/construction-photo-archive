@@ -184,9 +184,9 @@ export class Db {
     return Number(info.lastInsertRowid);
   }
 
-  /** 寫入一張照片 */
-  insertPhoto(p: NewPhoto): void {
-    this.db
+  /** 寫入一張照片/媒體，回傳 photo id（追加合併拆單時要引用） */
+  insertPhoto(p: NewPhoto): number {
+    const info = this.db
       .prepare(
         `INSERT INTO photos
           (record_id, file_path, upload_type, has_exif, exif_taken_at,
@@ -205,6 +205,19 @@ export class Db {
         p.phase ?? 'before',
         new Date().toISOString(),
       );
+    return Number(info.lastInsertRowid);
+  }
+
+  /** 更新紀錄的文字備註（追加合併／拆單用） */
+  updateTextNote(id: number, note: string | null): void {
+    this.db.prepare('UPDATE records SET text_note = ? WHERE id = ?').run(note, id);
+  }
+
+  /** 把一張照片/媒體改掛到另一筆紀錄並更新路徑（拆單用） */
+  movePhotoToRecord(photoId: number, recordId: number, filePath: string): void {
+    this.db
+      .prepare('UPDATE photos SET record_id = ?, file_path = ? WHERE id = ?')
+      .run(recordId, filePath, photoId);
   }
 
   /** 依 id 查紀錄重點欄位（人工確認用） */
