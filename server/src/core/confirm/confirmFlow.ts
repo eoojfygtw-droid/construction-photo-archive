@@ -42,6 +42,11 @@ const METHOD_LABELS: Record<string, string> = {
   manual_pick: '人工指定',
 };
 
+/** 判定方式中文標示；建檔回條與追加併入回條共用 */
+export function methodLabel(method: string): string {
+  return METHOD_LABELS[method] ?? method;
+}
+
 /**
  * 建檔後送出「整理結果 + ✅/✏️」訊息。
  * 回條語氣（2026-06-10 調整）：工地已判定才會走到這裡，歸檔已完成，
@@ -55,7 +60,7 @@ export async function promptConfirm(
 ): Promise<void> {
   const lines = [
     `📋 已建檔 ${s.recordNo}`,
-    `🏗 工地：${s.projectLabel}（${METHOD_LABELS[s.method] ?? s.method}）`,
+    `🏗 工地：${s.projectLabel}（${methodLabel(s.method)}）`,
     `📷 照片：${s.photoCount} 張`,
   ];
   if (s.voiceCount) lines.push(`🎤 錄音：${s.voiceCount} 則`);

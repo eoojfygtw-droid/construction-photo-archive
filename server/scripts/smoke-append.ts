@@ -162,6 +162,11 @@ async function run() {
   const reply = adapter.sent.at(-1);
   ok(!!reply && reply.text.includes(`已併入 ${base.recordNo}`), '回覆「已併入」');
   ok(!!reply?.buttons?.[0]?.callbackData.startsWith('sp:'), '附「🆕 拆成新筆」按鈕');
+  // 回條格式與建檔回條統一：工地行（判定方式中文化）＋媒體計數＋合併後備註＋不用回覆
+  ok(reply?.text.includes('🏗 工地：SMKA 煙霧追加工地') ?? false, '回條含工地行');
+  ok((reply?.text.includes('📷 照片：1 張') && reply?.text.includes('🎤 錄音：1 則')) ?? false, '回條分列照片/錄音計數');
+  ok(reply?.text.includes('鋼筋外露') ?? false, '回條含合併後備註');
+  ok(reply?.text.includes('不用回覆') ?? false, '回條語氣：明示不用回覆');
 
   // ---- 4) 封單規則：選工地不封單，只有 ✅ 封單 ----
   console.log('4) 封單規則');

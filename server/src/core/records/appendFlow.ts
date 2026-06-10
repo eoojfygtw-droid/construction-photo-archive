@@ -22,7 +22,7 @@ import type { Db, RecordFull } from '../../db';
 import type { IntakeResult } from '../media/photoIntake';
 import type { SiteResolver } from '../resolve/SiteResolver';
 import { moveFile, recordDir } from './archiver';
-import { promptConfirm } from '../confirm/confirmFlow';
+import { methodLabel, promptConfirm } from '../confirm/confirmFlow';
 import { logger } from '../../utils/logger';
 
 /** 追加合併時間窗（毫秒）：上一筆建檔/上次追加後 10 分鐘內 */
@@ -273,25 +273,41 @@ export async function appendToRecord(
     reporterName: msg.reporterName,
   });
 
-  // 5) 回覆已併入 + 拆單按鈕
-  const voiceCount = intake.filter(
-    (r) => r.uploadType === 'voice' || r.uploadType === 'audio',
+  // 5) 回覆已併入（與建檔回條同格式，顯示併入後的紀錄全貌）+ 拆單按鈕
+  //    注意：這裡不放 ✅（按了會封單），改提示「有別的事才拆新筆」。
+  const allMedia = db.getPhotos(recordId);
+  const totalVoice = allMedia.filter(
+    (p) => p.uploadType === 'voice' || p.uploadType === 'audio',
   ).length;
-  const parts: string[] = [];
-  if (voiceCount) parts.push(`錄音 ${voiceCount} 則`);
-  if (fragment) parts.push('備註');
-  const head = voiceCount ? '🎤' : '📝';
+  const totalPhotos = allMedia.length - totalVoice;
+  const mergedNote = db.getRecordFull(recordId)?.textNote?.trim();
+  const projectLabel = rec.projectCode
+    ? `${rec.projectCode}${rec.projectName ? ` ${rec.projectName}` : ''}`
+    : '（未歸檔／_inbox）';
+  const lines = [
+    `📋 已併入 ${rec.recordNo}`,
+    `🏗 工地：${projectLabel}（${methodLabel(rec.resolveMethod)}）`,
+    `📷 照片：${totalPhotos} 張`,
+  ];
+  if (totalVoice) lines.push(`🎤 錄音：${totalVoice} 則`);
+  if (mergedNote) lines.push(`📝 備註：${mergedNote}`);
+  lines.push(`👤 回報：${msg.reporterName}`);
+  lines.push('', '✅ 已自動併入上一筆，不用回覆。', '如果這是另一件事，按 🆕 拆成新筆。');
   const buttons: OutgoingButton[] = [
     { text: '🆕 拆成新筆', callbackData: `${SPLIT_PREFIX}:${appendId}` },
   ];
-  await adapter.sendMessageWithButtons(
-    msg.chatId,
-    `${head} 已併入 ${rec.recordNo}（${parts.join('＋')}）。\n如果這是另一件事，按下面拆成新筆。`,
-    buttons,
-  );
+  await adapter.sendMessageWithButtons(msg.chatId, lines.join('\n'), buttons);
+
+  // 追加內容摘要（log 用）：本次新增的錄音則數與是否帶備註
+  const addedVoice = intake.filter(
+    (r) => r.uploadType === 'voice' || r.uploadType === 'audio',
+  ).length;
+  const partsLog: string[] = [];
+  if (addedVoice) partsLog.push(`錄音 ${addedVoice} 則`);
+  if (fragment) partsLog.push('備註');
   logger.info('已追加併入上一筆', {
     紀錄編號: rec.recordNo,
-    追加內容: parts.join('＋'),
+    追加內容: partsLog.join('＋'),
     回報人: `${msg.reporterName}（${msg.reporterId}）`,
   });
 }
