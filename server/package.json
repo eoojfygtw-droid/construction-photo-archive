@@ -9,7 +9,7 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "report": "tsx scripts/report.ts",
-    "test": "tsx scripts/smoke-archive.ts && tsx scripts/smoke-confirm.ts && tsx scripts/smoke-site.ts && tsx scripts/smoke-report.ts"
+    "test": "tsx scripts/smoke-archive.ts && tsx scripts/smoke-confirm.ts && tsx scripts/smoke-site.ts && tsx scripts/smoke-location.ts && tsx scripts/smoke-report.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

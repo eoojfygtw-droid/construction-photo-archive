@@ -23,6 +23,11 @@ import {
   promptConfirm,
 } from './core/confirm/confirmFlow';
 import { buildSitePickerButtons } from './core/confirm/siteFlow';
+import {
+  promptBareLocation,
+  isLocationCallback,
+  handleLocationCallback,
+} from './core/confirm/locationFlow';
 import { Notifier } from './ops/notifier';
 
 async function main(): Promise<void> {
@@ -112,6 +117,18 @@ async function main(): Promise<void> {
         }
         return;
       }
+    }
+
+    // 第 2 種純定位：單獨傳「定位」（無照片、無文字、也不是剛 /新增工地）
+    // → 不再沉默，主動判斷工地並回覆／詢問（判得出回覆、判不出跳選單），由使用者點選記住目前工地。
+    const isBareLocation =
+      !!msg.location &&
+      msg.photos.length === 0 &&
+      !msg.text?.trim() &&
+      !msg.caption?.trim();
+    if (isBareLocation) {
+      await promptBareLocation(adapter, resolver, projectStore, msg);
+      return;
     }
 
     logger.info('紀錄就緒', {
@@ -237,6 +254,17 @@ async function main(): Promise<void> {
   // 人工確認按鈕回呼（✅ 確認 / ✏️ 改工地 / 選工地）；單則失敗不影響主迴圈
   adapter.onCallback(async (cb) => {
     try {
+      // loc:… 為「單獨定位」流程（只設目前工地上下文，不搬檔），與 s:/c:/e: 分流
+      if (isLocationCallback(cb)) {
+        await handleLocationCallback(
+          adapter,
+          projectStore,
+          contextStore,
+          cb,
+          Date.now(),
+        );
+        return;
+      }
       await handleConfirmCallback(adapter, db, projectStore, cb);
     } catch (err) {
       logger.error('處理按鈕回呼失敗', err instanceof Error ? err.message : err);
