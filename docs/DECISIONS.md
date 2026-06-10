@@ -47,6 +47,11 @@
 - **理由**：原本強制現場使用者手打經緯度完全不可行（使用者直接反映）。改成「打代碼名稱、要 GPS 就傳定位」最貼合手機現場操作；精確座標也可由助理代查後用完整指令補。
 - **影響範圍**：`Project` 的 center/radius 改 `number | null`；`ProjectStore.findByGps` 跳過無座標工地、新增 `setCenter()`；新增 `PendingSiteStore`；`handleCommand`（2 參數流程 + 中文別名）；`index.ts`（傳位置設中心、handleCommand 多傳 pending）。
 
+## 2026-06-10：單獨傳定位不再沉默——主動判斷工地並回覆／詢問
+- **決策**：收到「單獨定位」（無照片、無文字）不再只默默更新上下文。判得出（telegram_location / recent_context）→ 回覆判定到的工地＋「✏️ 改工地」按鈕；判不出 → 直接跳工地選單詢問。使用者點選**只設「目前工地上下文」**（之後 2 小時照片自動沿用），不建檔、不動 projects.json、不搬檔——「純位置不建檔」原則維持不變。
+- **理由**：實際使用發現傳定位後 bot 毫無回應，現場體感像「bot 死了」；判不出時使用者也不知道定位沒被用上，白傳。
+- **影響範圍**：新增 `core/confirm/locationFlow.ts`（`loc:` 回呼前綴，與 siteFlow 的 `s:` 已建檔重歸分離）；`index.ts` 接 `promptBareLocation` / `handleLocationCallback`；新增 `smoke-location.ts`（5 案例）入 `npm run test`。
+
 ## 2026-06-05：紀錄編號與歸檔日期規則
 - **決策**：紀錄編號＝`{project_code}-{YYYYMMDD}-{3 位流水號}`；歸檔日期以**收件時間**為準，EXIF 拍攝時間另存欄位。資料夾結構 `data/projects/{code}_{name}/{YYYY}/{MM}/{DD}/records/{record_no}/`（photos/ voices/ text.txt metadata.json），無法判斷者進 `data/_inbox/{record_no}/`。
 - **理由**：收件時間穩定可控（EXIF 可能缺或被壓掉）；EXIF 拍攝時間仍保留供稽核。

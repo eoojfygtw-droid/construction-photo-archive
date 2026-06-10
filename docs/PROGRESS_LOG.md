@@ -2,10 +2,16 @@
 
 > 時間軸。重大進展、踩雷、里程碑往這裡補。詳細規格演進另見 docs/HANDOFF.md「二、規格演進歷程」。
 
+## 2026-06-10 單獨傳定位不再沉默 + restart-bot 套用新版（補記）🟢
+桌機接續做（該場次未打收工，本條為事後對齊補記）。兩件事：
+- **單獨傳「定位」改主動回應**：過去純位置訊息只默默更新上下文、不回任何訊息，現場體感像「bot 死了」。新增 `core/confirm/locationFlow.ts`：判得出（telegram_location / recent_context）→ 回覆判定到的工地＋「✏️ 不是這個 / 改工地」；判不出 → 直接跳工地選單問「你現在在哪個工地？」。使用者點選**只設「目前工地上下文」**（供 2 小時 recent_context 沿用），不建檔、不動 projects.json、不搬檔——維持「純位置不建檔」原則。`loc:` 回呼前綴與 siteFlow 的 `s:`（已建檔重歸）分離。
+- **新增 `scripts/smoke-location.ts`**（5 案例：範圍內命中 / 範圍外選單 / `_pick` 完整選單 / `_skip` 略過 / 選定後沿用），串入 `npm run test`（現 5 支：archive 16 / confirm 13 / site 16 / location / report 14）。typecheck + smoke 全綠（18:45 commit 851afa8 前重跑確認）。
+- **17:42 `restart-bot.cmd` 重啟背景 bot**：6/8 的 `/新增工地` 新版＋本日定位互動**皆已套用生效**（佐證：activity.log 17:42:48 完整啟動序列、node 程序啟動時間一致；原始檔最後修改 17:35–17:37 皆早於重啟）。NEXT_ACTIONS「桌機 restart 待辦」清除。
+
 ## 2026-06-08 新增工地改為現場可用（座標可選 / 傳位置設中心）+ 中文指令別名 🟢
 驗收期間點出 `/addproject` 強制手打經緯度對工地現場根本不可行。改成：①指令加中文別名 **`/新增工地`**（`/addproject` 仍可用）；②**座標可選**——`/新增工地 代碼 名稱` 就能建（先用 `#代碼` 歸檔），加完**傳一個「位置」📍**即自動設成工地中心、開 GPS 自動歸檔；③一次帶全 `代碼 名稱 緯度 經度 [半徑]` 仍可用（供代查座標後貼）。新增 `PendingSiteStore`、`ProjectStore.setCenter`，`Project` 的 center/radius 改 `number | null`。typecheck + 4 支 smoke（16/13/16/14）全綠。
 - 待補（V0 可做）：**錄音存檔**——把 Telegram 語音/音訊當媒體歸檔（沿用照片管線、`upload_type=voice`、不用改表），**不轉文字**；轉逐字稿（Whisper）仍 V1、需公司同意送外部 AI。見 NEXT_ACTIONS 規劃中。
-> 註：以上程式改動需 `restart-bot.cmd` 套用到背景 bot 後才生效。
+> 註：以上程式改動需 `restart-bot.cmd` 套用到背景 bot 後才生效。（✅ 已於 2026-06-10 17:42 重啟套用）
 
 ## 2026-06-08 V0 進入 5 工作天驗收期 + bot 背景常駐 + 存活監控 🟢
 桌機開工續做。**正式進入「連續 5 個工作天」驗收期**：今日累積 7 筆（A001×1 + C001×6，含 manual_code / photo_gps(距 0m) / recent_context）算**第 1 天，不清資料**。把 bot 從「掛在對話前景」升級成正式常駐 + 自我監控：
