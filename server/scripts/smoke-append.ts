@@ -163,11 +163,14 @@ async function run() {
   ok(!!reply && reply.text.includes(`已併入 ${base.recordNo}`), '回覆「已併入」');
   ok(!!reply?.buttons?.[0]?.callbackData.startsWith('sp:'), '附「🆕 拆成新筆」按鈕');
 
-  // ---- 4) 已按 ✅ 的紀錄不再併 ----
-  console.log('4) 封單後不再併');
+  // ---- 4) 封單規則：選工地不封單，只有 ✅ 封單 ----
+  console.log('4) 封單規則');
+  // 模擬從選單選定工地（manual_pick 會把狀態改成 待改善）→ 仍可併
   db.updateStatus(base.recordId, '待改善', 'u1');
-  ok(findAppendTarget(store, db, resolver, msgOf({ text: '補' }), t0 + 120_000) === null, '狀態離開 待確認 → 不併');
-  db.updateStatus(base.recordId, '待確認', 'u1'); // 還原供後續拆單測試
+  ok(findAppendTarget(store, db, resolver, msgOf({ text: '補' }), t0 + 120_000) === base.recordId, '選工地改狀態後仍可併（歸類不算封單）');
+  // 按 ✅（markClosed）→ 封單不併
+  store.markClosed(base.recordId);
+  ok(findAppendTarget(store, db, resolver, msgOf({ text: '補' }), t0 + 120_000) === null, '按 ✅ 封單後不併');
 
   // ---- 5) 拆成新筆 ----
   console.log('5) 🆕 拆成新筆');

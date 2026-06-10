@@ -315,6 +315,12 @@ async function main(): Promise<void> {
         await handleSplitCallback(adapter, db, lastRecords, appendStore, cb, Date.now());
         return;
       }
+      // ✅ 確認（c:{id}）＝封單：之後的語音/文字不再自動併入這筆。
+      // 選工地/改工地（s:/e:）只是歸類，不封單，後續補充仍會併入。
+      if (cb.data.startsWith('c:')) {
+        const closedId = Number(cb.data.split(':')[1]);
+        if (!Number.isNaN(closedId)) lastRecords.markClosed(closedId);
+      }
       await handleConfirmCallback(adapter, db, projectStore, cb);
     } catch (err) {
       logger.error('處理按鈕回呼失敗', err instanceof Error ? err.message : err);

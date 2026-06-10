@@ -34,15 +34,25 @@ const SPLIT_PREFIX = 'sp';
 /** 記住每個回報人最近一筆紀錄（記憶體；bot 重啟即清空，屬可接受損失） */
 export class LastRecordStore {
   private map = new Map<string, { recordId: number; atMs: number }>();
+  /** 已封單（按過 ✅）的紀錄：不再接受追加。選工地/改工地不算封單。 */
+  private closed = new Set<number>();
 
   set(reporterId: string, recordId: number, atMs: number): void {
     this.map.set(reporterId, { recordId, atMs });
   }
 
-  /** 取時間窗內的最近紀錄 id；過期回 null */
+  /** 按 ✅ 確認＝封單：之後的語音/文字不再併入這筆 */
+  markClosed(recordId: number): void {
+    // 防無限成長：封單只在 10 分鐘時間窗內有意義，累積多了直接清掉
+    if (this.closed.size > 500) this.closed.clear();
+    this.closed.add(recordId);
+  }
+
+  /** 取時間窗內的最近紀錄 id；過期或已封單回 null */
   get(reporterId: string, nowMs: number): number | null {
     const e = this.map.get(reporterId);
     if (!e || nowMs - e.atMs > APPEND_WINDOW_MS) return null;
+    if (this.closed.has(e.recordId)) return null;
     return e.recordId;
   }
 }
@@ -94,7 +104,9 @@ export function isAppendCandidate(msg: IncomingMessage): boolean {
 
 /**
  * 找出可併入的目標紀錄 id；不符合任一條件回 null（走原本建檔流程）。
- * 條件：時間窗內有上一筆、該筆狀態仍是「待確認」、文字不含工地代碼。
+ * 條件：時間窗內有上一筆、該筆未封單（封單＝按過 ✅，store 記）、文字不含工地代碼。
+ * 注意：不看紀錄狀態——從選單選工地/改工地會把狀態改成「待改善」，
+ *       但那只是歸類動作，不代表這件事記錄完了，封單只認 ✅。
  */
 export function findAppendTarget(
   store: LastRecordStore,
@@ -110,9 +122,9 @@ export function findAppendTarget(
   const codeText = `${msg.text ?? ''} ${msg.caption ?? ''}`.trim();
   if (codeText && resolver.matchManualCode(codeText)) return null;
 
-  // 上一筆已按 ✅（狀態離開 待確認）視為封單，不再併
+  // 紀錄不存在（理論上不會）才放棄
   const rec = db.getRecordById(recordId);
-  if (!rec || rec.status !== '待確認') return null;
+  if (!rec) return null;
 
   return recordId;
 }
