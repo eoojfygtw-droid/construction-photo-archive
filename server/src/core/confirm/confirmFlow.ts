@@ -33,7 +33,21 @@ export interface ConfirmSummary {
   reporterName: string;
 }
 
-/** 建檔後送出「整理結果 + ✅/✏️」訊息 */
+/** 判定方式中文標示（回條顯示用；查無對應就原樣顯示） */
+const METHOD_LABELS: Record<string, string> = {
+  manual_code: '訊息帶代碼',
+  photo_gps: '照片GPS',
+  telegram_location: '定位判定',
+  recent_context: '自動沿用',
+  manual_pick: '人工指定',
+};
+
+/**
+ * 建檔後送出「整理結果 + ✅/✏️」訊息。
+ * 回條語氣（2026-06-10 調整）：工地已判定才會走到這裡，歸檔已完成，
+ * 使用者不需要回覆——按鈕只是「有錯才用」的修正入口與封單/計分器，
+ * 文案不可寫成必答題（實測會被誤讀成又在問工地）。
+ */
 export async function promptConfirm(
   adapter: MessageChannelAdapter,
   chatId: string,
@@ -41,16 +55,16 @@ export async function promptConfirm(
 ): Promise<void> {
   const lines = [
     `📋 已建檔 ${s.recordNo}`,
-    `🏗 工地：${s.projectLabel}（${s.method}）`,
+    `🏗 工地：${s.projectLabel}（${METHOD_LABELS[s.method] ?? s.method}）`,
     `📷 照片：${s.photoCount} 張`,
   ];
   if (s.voiceCount) lines.push(`🎤 錄音：${s.voiceCount} 則`);
   if (s.note) lines.push(`📝 備註：${s.note}`);
   lines.push(`👤 回報：${s.reporterName}`);
-  lines.push('', '請確認資料是否正確：');
+  lines.push('', '✅ 已自動歸檔，不用回覆。', '資料有誤才需要按 ✏️ 修改。');
 
   const buttons: OutgoingButton[] = [
-    { text: '✅ 正確', callbackData: `c:${s.recordId}` },
+    { text: '✅ 確認無誤', callbackData: `c:${s.recordId}` },
     { text: '✏️ 修改', callbackData: `e:${s.recordId}` },
   ];
   await adapter.sendMessageWithButtons(chatId, lines.join('\n'), buttons);

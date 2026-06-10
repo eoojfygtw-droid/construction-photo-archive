@@ -105,6 +105,8 @@ async function run() {
   ok(adapter.sent[0].buttons[0].callbackData === `c:${recordId}`, '✅ 按鈕 callbackData 正確');
   ok(adapter.sent[0].buttons[1].callbackData === `e:${recordId}`, '✏️ 按鈕 callbackData 正確');
   ok(adapter.sent[0].text.includes('A001-20260605-001') && adapter.sent[0].text.includes('三樓樑柱裂縫'), '摘要含編號與備註');
+  ok(adapter.sent[0].text.includes('不用回覆'), '回條語氣：明示已歸檔、不用回覆');
+  ok(adapter.sent[0].text.includes('訊息帶代碼'), '判定方式已中文化');
 
   // 2) 按 ✅ → 待確認 → 待改善，就地更新訊息
   console.log('2) 按 ✅ 正確');
