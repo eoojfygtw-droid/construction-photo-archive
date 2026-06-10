@@ -42,6 +42,19 @@ interface TgLocation {
   latitude: number;
   longitude: number;
 }
+interface TgVoice {
+  file_id: string;
+  duration: number;
+  mime_type?: string;
+  file_size?: number;
+}
+interface TgAudio {
+  file_id: string;
+  duration: number;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+}
 interface TgMessage {
   message_id: number;
   from?: TgUser;
@@ -51,6 +64,8 @@ interface TgMessage {
   caption?: string;
   photo?: TgPhotoSize[];
   document?: TgDocument;
+  voice?: TgVoice;
+  audio?: TgAudio;
   location?: TgLocation;
   media_group_id?: string;
 }
@@ -187,6 +202,26 @@ export class TelegramAdapter implements MessageChannelAdapter {
         fileName: m.document.file_name,
         fileSize: m.document.file_size,
         mimeType: m.document.mime_type,
+      });
+    }
+    // voice＝語音訊息（按麥克風錄的）；audio＝音訊檔附件——都當媒體歸檔（V0 不轉文字）
+    if (m.voice) {
+      photos.push({
+        fileId: m.voice.file_id,
+        uploadType: 'voice',
+        fileSize: m.voice.file_size,
+        mimeType: m.voice.mime_type,
+        durationSec: m.voice.duration,
+      });
+    }
+    if (m.audio) {
+      photos.push({
+        fileId: m.audio.file_id,
+        uploadType: 'audio',
+        fileName: m.audio.file_name,
+        fileSize: m.audio.file_size,
+        mimeType: m.audio.mime_type,
+        durationSec: m.audio.duration,
       });
     }
 

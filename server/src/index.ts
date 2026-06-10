@@ -209,7 +209,10 @@ async function main(): Promise<void> {
         回報人: `${msg.reporterName}（${msg.reporterId}）`,
       });
 
-      // Bot 回覆整理結果 + ✅/✏️ 人工確認（5-3a）
+      // Bot 回覆整理結果 + ✅/✏️ 人工確認（5-3a）；照片與錄音分開計數
+      const voiceCount = intake.filter(
+        (r) => r.uploadType === 'voice' || r.uploadType === 'audio',
+      ).length;
       if (result.projectCode) {
         const proj = projectStore.findByCode(result.projectCode);
         await promptConfirm(adapter, msg.chatId, {
@@ -217,7 +220,8 @@ async function main(): Promise<void> {
           recordNo,
           projectLabel: `${result.projectCode}${proj ? ` ${proj.name}` : ''}`,
           method: result.method,
-          photoCount: intake.length,
+          photoCount: intake.length - voiceCount,
+          voiceCount,
           note:
             [msg.text, msg.caption]
               .map((s) => s?.trim())

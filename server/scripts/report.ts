@@ -24,6 +24,9 @@ const REPORT_DIR = join(DATA_ROOT, '_reports');
 /** 瀏覽器 <img> 能直接顯示的副檔名（HEIC/HEIF 不在此列，顯示佔位卡） */
 const DISPLAYABLE = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']);
 
+/** 瀏覽器 <audio> 能直接播放的副檔名（錄音/音訊） */
+const PLAYABLE_AUDIO = new Set(['.oga', '.ogg', '.mp3', '.m4a', '.wav']);
+
 /** resolve_method → 中文標籤（驗收時一眼看出「怎麼判到這個工地」） */
 const RESOLVE_LABEL: Record<string, string> = {
   manual_code: '手動代碼',
@@ -131,11 +134,25 @@ function readRecords(dbPath: string, date: string): ReportRecord[] {
   }
 }
 
-/** 單張照片縮圖 HTML（可顯示→<img>；HEIC/缺檔→佔位卡） */
+/** 單件媒體縮圖 HTML（照片→<img>；錄音→<audio>；HEIC/缺檔→佔位卡） */
 function photoCell(filePath: string, uploadType: string | null): string {
   const ext = extname(filePath).toLowerCase();
   const fileName = filePath.split(/[\\/]/).pop() ?? filePath;
-  const badge = uploadType === 'document' ? '📄 文件' : '🖼 照片';
+  const badge =
+    uploadType === 'voice' || uploadType === 'audio'
+      ? '🎤 錄音'
+      : uploadType === 'document'
+        ? '📄 文件'
+        : '🖼 照片';
+  // 錄音/音訊：存在且可播 → <audio> 播放器；否則落到下方佔位卡
+  if (
+    (uploadType === 'voice' || uploadType === 'audio') &&
+    existsSync(filePath) &&
+    PLAYABLE_AUDIO.has(ext)
+  ) {
+    const url = pathToFileURL(resolve(filePath)).href;
+    return `<figure class="thumb thumb-audio"><audio controls preload="none" src="${esc(url)}"></audio><figcaption>${esc(fileName)}<br><span class="up">${badge}</span></figcaption></figure>`;
+  }
   if (existsSync(filePath) && DISPLAYABLE.has(ext)) {
     const url = pathToFileURL(resolve(filePath)).href;
     return `<figure class="thumb"><img src="${esc(url)}" alt="${esc(fileName)}" loading="lazy"><figcaption>${esc(fileName)}<br><span class="up">${badge}</span></figcaption></figure>`;
@@ -249,6 +266,8 @@ function renderHtml(date: string, records: ReportRecord[], summary: ReportSummar
   .thumb figcaption { font-size: 11px; color: #666; word-break: break-all; margin-top: 4px; }
   .thumb .up { color: #2d6cdf; }
   .thumb-placeholder .ph { width: 130px; height: 130px; border-radius: 6px; border: 1px dashed #bbb; background: #fafafa; display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px; text-align: center; padding: 4px; box-sizing: border-box; }
+  .thumb-audio { width: 270px; }
+  .thumb-audio audio { width: 270px; height: 40px; }
   .empty-day { text-align: center; color: #888; padding: 60px 0; font-size: 15px; line-height: 1.8; }
   footer { text-align: center; color: #aaa; font-size: 12px; padding: 20px; }
 </style>

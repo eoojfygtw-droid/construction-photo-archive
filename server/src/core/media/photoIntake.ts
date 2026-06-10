@@ -48,16 +48,22 @@ export async function intakePhotos(
     const filePath = join(dir, `${i + 1}${ext}`);
     await writeFile(filePath, dl.buffer);
 
-    const exif = await extractExif(dl.buffer);
+    // 錄音/音訊沒有 EXIF，直接跳過解析
+    const isAudio = photo.uploadType === 'voice' || photo.uploadType === 'audio';
+    const exif = isAudio ? {} : await extractExif(dl.buffer);
 
-    logger.info('照片已下載', {
+    logger.info(isAudio ? '錄音已下載' : '照片已下載', {
       檔案: filePath,
       大小KB: Math.round(dl.buffer.length / 1024),
       上傳方式: photo.uploadType,
-      EXIF拍攝時間: exif.takenAt ?? '（無，可能是 photo 壓縮掉了）',
-      EXIF_GPS: exif.gps
-        ? `${exif.gps.latitude},${exif.gps.longitude}`
-        : '（無）',
+      ...(isAudio
+        ? { 長度秒: photo.durationSec ?? '（未知）' }
+        : {
+            EXIF拍攝時間: exif.takenAt ?? '（無，可能是 photo 壓縮掉了）',
+            EXIF_GPS: exif.gps
+              ? `${exif.gps.latitude},${exif.gps.longitude}`
+              : '（無）',
+          }),
     });
 
     results.push({
@@ -78,7 +84,7 @@ function toDateStr(unixSec: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/** 由 MIME 類型推副檔名（document 上傳常帶 mime_type） */
+/** 由 MIME 類型推副檔名（document/voice/audio 上傳常帶 mime_type） */
 function extFromMime(mime?: string): string {
   if (!mime) return '';
   const map: Record<string, string> = {
@@ -87,6 +93,13 @@ function extFromMime(mime?: string): string {
     'image/heic': '.heic',
     'image/heif': '.heif',
     'image/webp': '.webp',
+    // 錄音/音訊（Telegram 語音訊息為 audio/ogg → .oga）
+    'audio/ogg': '.oga',
+    'audio/mpeg': '.mp3',
+    'audio/mp4': '.m4a',
+    'audio/x-m4a': '.m4a',
+    'audio/wav': '.wav',
+    'audio/x-wav': '.wav',
   };
   return map[mime] ?? '';
 }

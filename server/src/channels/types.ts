@@ -7,7 +7,7 @@
 /** 來源平台代號 */
 export type ChannelName = 'telegram' | 'line';
 
-/** 單張照片/檔案（V0 先記錄識別碼，尚未下載原檔） */
+/** 單件媒體（照片/檔案/錄音；V0 先記錄識別碼，尚未下載原檔） */
 export interface IncomingPhoto {
   /** 平台檔案識別碼（Telegram = file_id），後續步驟才用它下載原檔 */
   fileId: string;
@@ -15,14 +15,18 @@ export interface IncomingPhoto {
    * 上傳方式：
    * - photo：經平台壓縮，EXIF 會被移除
    * - document：原檔上傳，保留 EXIF（重要照片建議用此方式）
+   * - voice：語音訊息（按麥克風錄的，通常為 .oga）
+   * - audio：音訊檔（用附件傳的音樂/錄音檔）
    */
-  uploadType: 'photo' | 'document';
+  uploadType: 'photo' | 'document' | 'voice' | 'audio';
   fileName?: string;
   fileSize?: number;
   width?: number;
   height?: number;
-  /** document 的 MIME 類型（photo 通常為 undefined） */
+  /** document/voice/audio 的 MIME 類型（photo 通常為 undefined） */
   mimeType?: string;
+  /** 錄音長度（秒；voice/audio 才有） */
+  durationSec?: number;
 }
 
 /** 位置訊息（用於工地判斷第 3 層 telegram_location） */
@@ -51,7 +55,7 @@ export interface IncomingMessage {
   text?: string;
   /** 照片附帶的說明文字 */
   caption?: string;
-  /** 本則訊息夾帶的照片/檔案 */
+  /** 本則訊息夾帶的照片/檔案/錄音 */
   photos: IncomingPhoto[];
   /** 位置訊息（若有） */
   location?: IncomingLocation;

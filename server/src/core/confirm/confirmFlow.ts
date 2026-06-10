@@ -26,6 +26,8 @@ export interface ConfirmSummary {
   /** 判定方式（manual_code 等） */
   method: string;
   photoCount: number;
+  /** 錄音/音訊則數（無則可省略） */
+  voiceCount?: number;
   note: string | null;
   reporterName: string;
 }
@@ -41,6 +43,7 @@ export async function promptConfirm(
     `🏗 工地：${s.projectLabel}（${s.method}）`,
     `📷 照片：${s.photoCount} 張`,
   ];
+  if (s.voiceCount) lines.push(`🎤 錄音：${s.voiceCount} 則`);
   if (s.note) lines.push(`📝 備註：${s.note}`);
   lines.push(`👤 回報：${s.reporterName}`);
   lines.push('', '請確認資料是否正確：');
