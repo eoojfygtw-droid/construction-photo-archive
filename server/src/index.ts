@@ -13,6 +13,7 @@ import { intakePhotos, type IntakeResult } from './core/media/photoIntake';
 import { MediaGroupAggregator } from './core/ingest/MediaGroupAggregator';
 import { ProjectStore } from './core/projects/ProjectStore';
 import { PendingSiteStore } from './core/projects/PendingSiteStore';
+import { PendingLocationStore } from './core/projects/PendingLocationStore';
 import { UserContextStore } from './core/resolve/UserContextStore';
 import { SiteResolver } from './core/resolve/SiteResolver';
 import { handleCommand } from './core/commands/handleCommand';
@@ -74,6 +75,7 @@ async function main(): Promise<void> {
   await projectStore.load();
   const contextStore = new UserContextStore();
   const pendingSite = new PendingSiteStore(); // 剛新增、待傳位置設座標的工地
+  const pendingLocations = new PendingLocationStore(); // 剛傳定位、待 /新增工地 沿用當中心
   const resolver = new SiteResolver(projectStore, contextStore);
   const lastRecords = new LastRecordStore(); // 追加合併：每人最近一筆紀錄
   const appendStore = new AppendStore(); // 追加合併：拆單反悔用
@@ -94,7 +96,7 @@ async function main(): Promise<void> {
     }
 
     // 指令（/addproject、/help…）優先，不當成一筆紀錄
-    if (await handleCommand(adapter, msg, projectStore, pendingSite)) return;
+    if (await handleCommand(adapter, msg, projectStore, pendingSite, pendingLocations, contextStore)) return;
 
     // 非工作群來源（例如運維群閒聊）只回應上面的查詢/指令，不進歸檔流程
     if (
@@ -138,7 +140,7 @@ async function main(): Promise<void> {
       !msg.text?.trim() &&
       !msg.caption?.trim();
     if (isBareLocation) {
-      await promptBareLocation(adapter, resolver, projectStore, msg);
+      await promptBareLocation(adapter, resolver, projectStore, pendingLocations, msg);
       return;
     }
 

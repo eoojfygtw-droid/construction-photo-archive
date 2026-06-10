@@ -6,6 +6,7 @@
 //   3) loc:_pick → 就地改成完整工地選單
 //   4) loc:_skip → 略過、不記工地
 //   5) loc:{code} → 設「目前工地」上下文（不搬檔）；之後無 GPS 的定位改走 recent_context
+//   6) loc:_new → 提示 /新增工地；暫存定位自動當新工地中心 + 設上下文
 // 用法：npx tsx scripts/smoke-location.ts
 // ============================================================
 import type {
@@ -20,6 +21,9 @@ import {
   promptBareLocation,
   handleLocationCallback,
 } from '../src/core/confirm/locationFlow';
+import { PendingLocationStore } from '../src/core/projects/PendingLocationStore';
+import { PendingSiteStore } from '../src/core/projects/PendingSiteStore';
+import { handleCommand } from '../src/core/commands/handleCommand';
 
 class StubAdapter {
   sent: { text: string; buttons?: OutgoingButton[]; columns?: number }[] = [];
@@ -101,11 +105,12 @@ async function run() {
   const NOW = Date.now();
   const contexts = new UserContextStore();
   const resolver = new SiteResolver(projectStore, contexts);
+  const pendingLocs = new PendingLocationStore();
   const adapter = new StubAdapter();
 
   // ---- 1) 定位落在工地範圍內 → 回覆判定 + ✏️ 改工地 ----
   console.log('1) 定位在工地範圍內（telegram_location 命中）');
-  await promptBareLocation(adapter as never, resolver, projectStore, msg(INSIDE));
+  await promptBareLocation(adapter as never, resolver, projectStore, pendingLocs, msg(INSIDE));
   const m1 = adapter.sent.at(-1);
   ok(m1?.text.includes('A001 信義豪宅案') ?? false, '回覆含判定到的工地');
   ok(m1?.text.includes('32m') ?? false, '回覆含距離');
@@ -115,17 +120,18 @@ async function run() {
   console.log('2) 定位不在任何工地（unresolved → 選單）');
   const adapter2 = new StubAdapter();
   // 換一個沒有上下文的回報人，避免沿用第 1 步設的上下文
-  await promptBareLocation(adapter2 as never, resolver, projectStore, msg(OUTSIDE, 'uNew'));
+  await promptBareLocation(adapter2 as never, resolver, projectStore, pendingLocs, msg(OUTSIDE, 'uNew'));
   const m2 = adapter2.sent.at(-1);
   ok(m2?.text.includes('哪個工地') ?? false, '送出「你現在在哪個工地」詢問');
   ok(m2?.buttons?.[0].callbackData === 'loc:A001', '選單含工地按鈕 loc:A001');
+  ok(m2?.buttons?.some((b) => b.callbackData === 'loc:_new') ?? false, '選單含「➕ 新增工地」loc:_new');
   ok(m2?.buttons?.at(-1)?.callbackData === 'loc:_skip', '選單含「略過」loc:_skip');
 
   // ---- 3) loc:_pick → 就地改成完整選單 ----
   console.log('3) loc:_pick 叫出完整選單');
   const a3 = new StubAdapter();
   await handleLocationCallback(a3 as never, projectStore, contexts, cb('loc:_pick', 'uNew'), NOW);
-  ok((a3.edits.at(-1)?.buttons?.length ?? 0) === 2, '選單含 1 工地 + 略過 共 2 顆');
+  ok((a3.edits.at(-1)?.buttons?.length ?? 0) === 3, '選單含 1 工地 + 新增 + 略過 共 3 顆');
 
   // ---- 4) loc:_skip → 略過 ----
   console.log('4) loc:_skip 略過');
@@ -144,8 +150,54 @@ async function run() {
 
   // 同一人之後再傳「不在工地範圍」的定位 → 應改走 recent_context 沿用 A001
   const a5b = new StubAdapter();
-  await promptBareLocation(a5b as never, resolver, projectStore, msg(OUTSIDE, 'uNew'));
+  await promptBareLocation(a5b as never, resolver, projectStore, pendingLocs, msg(OUTSIDE, 'uNew'));
   ok(a5b.sent.at(-1)?.text.includes('沿用你最近的工地') ?? false, '記住後，新定位走 recent_context 沿用');
+
+  // ---- 6) ➕ 新增工地：loc:_new 提示輸入指令；/新增工地 沿用暫存定位當中心 ----
+  console.log('6) loc:_new → /新增工地 用剛剛的定位當中心');
+  const a6 = new StubAdapter();
+  await handleLocationCallback(a6 as never, projectStore, contexts, cb('loc:_new', 'uAdd'), NOW);
+  ok(a6.edits.at(-1)?.text.includes('/新增工地') ?? false, 'loc:_new 提示輸入 /新增工地');
+
+  // 模擬：uAdd 剛傳過判不出的定位（promptBareLocation 已暫存）→ 打 /新增工地 B001 名稱
+  const added: { code: string; centerLat: number | null; centerLng: number | null }[] = [];
+  const addableStore = {
+    listActive: () => [PROJ],
+    findByCode: (c: string) => (c.toUpperCase() === PROJ.code ? PROJ : undefined),
+    findByGps: () => undefined,
+    add: async (p: { code: string; centerLat: number | null; centerLng: number | null }) => {
+      added.push(p);
+    },
+  } as never;
+  const aAdd = new StubAdapter();
+  await promptBareLocation(aAdd as never, resolver, projectStore, pendingLocs, msg(OUTSIDE, 'uAdd'));
+  const cmdMsg: IncomingMessage = {
+    channel: 'telegram',
+    chatId: '-100',
+    messageId: '9',
+    reporterId: 'uAdd',
+    reporterName: '工地主任',
+    photos: [],
+    text: '/新增工地 B001 中科新建案',
+    date: 0,
+  };
+  const aCmd = new StubAdapter();
+  const handled = await handleCommand(
+    aCmd as never,
+    cmdMsg,
+    addableStore,
+    new PendingSiteStore(),
+    pendingLocs,
+    contexts,
+  );
+  ok(handled, '/新增工地 視為指令處理');
+  ok(
+    added[0]?.centerLat === OUTSIDE.latitude && added[0]?.centerLng === OUTSIDE.longitude,
+    '自動用暫存定位當新工地中心',
+  );
+  ok(aCmd.sent.at(-1)?.text.includes('GPS 自動歸檔已開') ?? false, '回覆告知已用剛剛的定位');
+  ok(contexts.get('uAdd', NOW) === 'B001', '建好後順手設 2 小時上下文（接下來照片直接歸 B001）');
+  ok(pendingLocs.take('uAdd', NOW) === null, '暫存定位取一次即清');
 
   console.log(`\n結果：${pass} 通過 / ${fail} 失敗`);
   process.exit(fail === 0 ? 0 : 1);

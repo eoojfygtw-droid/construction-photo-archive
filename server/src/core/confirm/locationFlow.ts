@@ -11,6 +11,7 @@
 // callback data：
 //   loc:_pick        → 把訊息就地改成完整工地選單（給「判得出但要改」用）
 //   loc:_skip        → 略過，不記任何工地
+//   loc:_new         → 提示輸入 /新增工地（剛剛的定位已暫存，會自動當新工地中心）
 //   loc:{code}       → 把回報人目前工地設為 code（2 小時內照片自動沿用）
 // ============================================================
 import type { IncomingCallback, IncomingMessage } from '../../channels/types';
@@ -19,6 +20,7 @@ import type {
   OutgoingButton,
 } from '../../channels/MessageChannelAdapter';
 import type { ProjectStore } from '../projects/ProjectStore';
+import type { PendingLocationStore } from '../projects/PendingLocationStore';
 import type { SiteResolver } from '../resolve/SiteResolver';
 import type { UserContextStore } from '../resolve/UserContextStore';
 import { logger } from '../../utils/logger';
@@ -29,13 +31,16 @@ export const LOC_PREFIX = 'loc';
 const PICK = '_pick';
 /** 「略過、不記工地」特殊碼 */
 const SKIP = '_skip';
+/** 「這裡是新工地」特殊碼 */
+const NEW = '_new';
 
-/** 建「目前工地」選單：每個啟用工地一顆（loc:{code}）＋「略過」 */
+/** 建「目前工地」選單：每個啟用工地一顆（loc:{code}）＋「新增工地」＋「略過」 */
 function buildContextPickerButtons(projectStore: ProjectStore): OutgoingButton[] {
   const buttons: OutgoingButton[] = projectStore.listActive().map((p) => ({
     text: `${p.code} ${p.name}`,
     callbackData: `${LOC_PREFIX}:${p.code}`,
   }));
+  buttons.push({ text: '➕ 都不是，新增工地', callbackData: `${LOC_PREFIX}:${NEW}` });
   buttons.push({ text: '↩️ 略過', callbackData: `${LOC_PREFIX}:${SKIP}` });
   return buttons;
 }
@@ -48,13 +53,20 @@ export async function promptBareLocation(
   adapter: MessageChannelAdapter,
   resolver: SiteResolver,
   projectStore: ProjectStore,
+  pendingLocations: PendingLocationStore,
   msg: IncomingMessage,
 ): Promise<void> {
+  // 不管判不判得出，先暫存這個定位 10 分鐘——
+  // 之後打 /新增工地 代碼 名稱（不帶座標）會直接拿它當新工地中心。
+  if (msg.location) {
+    pendingLocations.set(msg.reporterId, msg.location, Date.now());
+  }
+
   // 尚未設定任何工地：選單會是空的，直接提示去新增
   if (projectStore.listActive().length === 0) {
     await adapter.sendMessage(
       msg.chatId,
-      '📍 收到定位，但目前還沒有任何工地。請先用 /新增工地 代碼 建立工地。',
+      '📍 收到定位，但目前還沒有任何工地。\n請輸入：/新增工地 代碼 名稱\n（10 分鐘內會自動用這個定位當工地中心、開 GPS 自動歸檔）',
     );
     return;
   }
@@ -112,6 +124,7 @@ export function isLocationCallback(cb: IncomingCallback): boolean {
  * 處理 loc:… 回呼。
  *  - loc:_pick → 就地改成完整工地選單
  *  - loc:_skip → 略過、移除按鈕
+ *  - loc:_new  → 提示輸入 /新增工地（暫存定位會自動當中心）
  *  - loc:{code} → 設定回報人「目前工地」上下文（只記不搬檔）
  */
 export async function handleLocationCallback(
@@ -135,6 +148,18 @@ export async function handleLocationCallback(
       '📍 你現在在哪個工地？',
       buildContextPickerButtons(projectStore),
       1,
+    );
+    return;
+  }
+
+  if (code === NEW) {
+    // 不在這裡建工地（按鈕拿不到自由文字），提示輸入指令；
+    // 定位已在 promptBareLocation 暫存，/新增工地 不帶座標會自動沿用。
+    await adapter.answerCallback(cb.callbackId);
+    await adapter.editMessageText(
+      cb.chatId,
+      cb.messageId,
+      '➕ 請直接輸入：/新增工地 代碼 名稱\n例：/新增工地 B001 ○○新建案\n（10 分鐘內會自動用你剛剛傳的定位當工地中心、開 GPS 自動歸檔）',
     );
     return;
   }

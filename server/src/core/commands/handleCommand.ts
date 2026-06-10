@@ -6,12 +6,16 @@ import type { MessageChannelAdapter } from '../../channels/MessageChannelAdapter
 import type { IncomingMessage } from '../../channels/types';
 import type { ProjectStore } from '../projects/ProjectStore';
 import type { PendingSiteStore } from '../projects/PendingSiteStore';
+import type { PendingLocationStore } from '../projects/PendingLocationStore';
+import type { UserContextStore } from '../resolve/UserContextStore';
 
 export async function handleCommand(
   adapter: MessageChannelAdapter,
   msg: IncomingMessage,
   store: ProjectStore,
   pending: PendingSiteStore,
+  pendingLocations: PendingLocationStore,
+  contexts: UserContextStore,
 ): Promise<boolean> {
   const text = (msg.text ?? '').trim();
   if (!text.startsWith('/')) return false;
@@ -71,19 +75,39 @@ export async function handleCommand(
           `已新增工地：${upperCode} ${name}（中心 ${lat},${lng}，半徑 ${radius}m，GPS 自動歸檔已開）`,
         );
       } else {
-        await store.add({
-          code: upperCode,
-          name,
-          centerLat: null,
-          centerLng: null,
-          radiusMeters: null,
-          active: true,
-        });
-        pending.set(msg.reporterId, upperCode, Date.now());
-        await adapter.sendMessage(
-          msg.chatId,
-          `✅ 已新增工地：${upperCode} ${name}\n現在就能用 #${upperCode}（或裸碼 ${upperCode}）歸檔。\n📍 想開 GPS 自動歸檔的話，10 分鐘內傳一個「位置」給我，我把它設成 ${upperCode} 的中心。`,
-        );
+        // 沒帶座標：若 10 分鐘內剛傳過定位（例如判不出 → 按「➕ 新增工地」），直接用它當中心
+        const stash = pendingLocations.take(msg.reporterId, Date.now());
+        if (stash) {
+          await store.add({
+            code: upperCode,
+            name,
+            centerLat: stash.latitude,
+            centerLng: stash.longitude,
+            radiusMeters: 300,
+            active: true,
+          });
+          // 人就在現場（定位是剛傳的）：順手設 2 小時上下文，
+          // 接下來的照片（多半無 GPS）才能立刻自動歸到這個新工地
+          contexts.set(msg.reporterId, upperCode, Date.now());
+          await adapter.sendMessage(
+            msg.chatId,
+            `✅ 已新增工地：${upperCode} ${name}\n📍 已用你剛剛傳的定位當中心（半徑 300m），GPS 自動歸檔已開。\n接下來 2 小時內你傳的照片會自動歸到 ${upperCode}。`,
+          );
+        } else {
+          await store.add({
+            code: upperCode,
+            name,
+            centerLat: null,
+            centerLng: null,
+            radiusMeters: null,
+            active: true,
+          });
+          pending.set(msg.reporterId, upperCode, Date.now());
+          await adapter.sendMessage(
+            msg.chatId,
+            `✅ 已新增工地：${upperCode} ${name}\n現在就能用 #${upperCode}（或裸碼 ${upperCode}）歸檔。\n📍 想開 GPS 自動歸檔的話，10 分鐘內傳一個「位置」給我，我把它設成 ${upperCode} 的中心。`,
+          );
+        }
       }
       return true;
     }
