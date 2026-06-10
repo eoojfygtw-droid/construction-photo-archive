@@ -11,6 +11,7 @@ import { Db } from '../src/db';
 import type { IncomingCallback } from '../src/channels/types';
 import type { OutgoingButton } from '../src/channels/MessageChannelAdapter';
 import { handleConfirmCallback } from '../src/core/confirm/confirmFlow';
+import { UserContextStore } from '../src/core/resolve/UserContextStore';
 
 const exists = (p: string) =>
   access(p).then(() => true).catch(() => false);
@@ -67,6 +68,7 @@ async function run() {
   const db = new Db(':memory:');
   await db.init();
   const adapter = new StubAdapter();
+  const contextStore = new UserContextStore();
 
   // ---- 準備：一筆 INBOX 紀錄 + 真實檔案（模擬 5-2 已歸到 _inbox）----
   const receivedAt = '2026-06-05T08:00:00.000Z';
@@ -117,7 +119,7 @@ async function run() {
 
   // ---- 1) 第 5 層：按工地按鈕 s:{id}:A001 → 重歸檔 ----
   console.log('1) 選定工地 A001（從 _inbox 搬到 projects）');
-  await handleConfirmCallback(adapter as never, db, projectStore, cb(`s:${recordId}:A001`));
+  await handleConfirmCallback(adapter as never, db, projectStore, contextStore, cb(`s:${recordId}:A001`));
 
   ok(await exists(join(expectDir, `${recordNo}-01.jpg`)), '照片已搬到 projects 目錄');
   ok(!(await exists(photoPath)), '_inbox 原照片已移走');
@@ -136,9 +138,18 @@ async function run() {
   ok(meta.record_no === recordNo, 'metadata record_no 維持原編號（不重編）');
   ok(adapter.edits.at(-1)?.text.includes('已歸檔到 A001') ?? false, '訊息就地更新為已歸檔');
 
+  // ---- 1b) 選單指定後，回報人 2 小時上下文已生效（之後照片走 recent_context）----
+  const recvMs = Date.parse(receivedAt);
+  ok(contextStore.get('u9', recvMs + 60 * 60 * 1000) === 'A001', '選單指定後記住 2 小時上下文（錨在收件時間）');
+  ok(contextStore.get('u9', recvMs + 3 * 60 * 60 * 1000) === null, '超過 2 小時上下文過期');
+  // setIfNewer 守門：較新的上下文不被舊紀錄的指定蓋掉
+  contextStore.set('u9', 'B999', recvMs + 30 * 60 * 1000);
+  contextStore.setIfNewer('u9', 'A001', recvMs);
+  ok(contextStore.get('u9', recvMs + 60 * 60 * 1000) === 'B999', '改舊紀錄不蓋掉較新的上下文');
+
   // ---- 2) ✏️ 改工地：叫出工地選單 ----
   console.log('2) 按 ✏️ 改工地 → 叫出選單');
-  await handleConfirmCallback(adapter as never, db, projectStore, cb(`e:${recordId}`));
+  await handleConfirmCallback(adapter as never, db, projectStore, contextStore, cb(`e:${recordId}`));
   const picker = adapter.edits.at(-1);
   ok((picker?.buttons?.length ?? 0) === 2, '選單含 1 工地 + 留_inbox 共 2 顆');
   ok(picker?.buttons?.[0].callbackData === `s:${recordId}:A001`, '選單工地按鈕 callbackData 正確');
@@ -147,7 +158,7 @@ async function run() {
   // ---- 3) 留 _inbox：不動工地 ----
   console.log('3) 選「留 _inbox」');
   const beforeProj = db.getRecordById(recordId)?.projectCode;
-  await handleConfirmCallback(adapter as never, db, projectStore, cb(`s:${recordId}:_keep`));
+  await handleConfirmCallback(adapter as never, db, projectStore, contextStore, cb(`s:${recordId}:_keep`));
   ok(adapter.answers.at(-1)?.text === '保留為待歸檔', '回「保留為待歸檔」');
   ok(db.getRecordById(recordId)?.projectCode === beforeProj, '工地維持不變');
 

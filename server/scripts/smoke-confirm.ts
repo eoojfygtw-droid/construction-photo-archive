@@ -11,6 +11,7 @@ import {
   handleConfirmCallback,
   promptConfirm,
 } from '../src/core/confirm/confirmFlow';
+import { UserContextStore } from '../src/core/resolve/UserContextStore';
 
 /** 只實作 confirmFlow 會用到的 adapter 方法，並錄下呼叫 */
 class StubAdapter {
@@ -42,6 +43,8 @@ const emptyProjects = {
   listActive: () => [],
   findByCode: () => undefined,
 } as never;
+/** 上下文 stub（本檔不測選定工地，僅滿足簽名） */
+const contextStore = new UserContextStore();
 
 function cb(data: string): IncomingCallback {
   return {
@@ -105,7 +108,7 @@ async function run() {
 
   // 2) 按 ✅ → 待確認 → 待改善，就地更新訊息
   console.log('2) 按 ✅ 正確');
-  await handleConfirmCallback(adapter as never, db, emptyProjects, cb(`c:${recordId}`));
+  await handleConfirmCallback(adapter as never, db, emptyProjects, contextStore, cb(`c:${recordId}`));
   ok(db.getRecordById(recordId)?.status === '待改善', '狀態轉為 待改善');
   ok(adapter.answers.at(-1)?.text === '已確認 ✅', 'answerCallback 回「已確認」');
   ok(adapter.edits.length === 1 && adapter.edits[0].text.includes('已確認定案'), '訊息就地更新為已定案');
@@ -113,23 +116,23 @@ async function run() {
   // 3) 重複按 ✅ → 防呆，不重複轉移
   console.log('3) 重複按 ✅');
   const editsBefore = adapter.edits.length;
-  await handleConfirmCallback(adapter as never, db, emptyProjects, cb(`c:${recordId}`));
+  await handleConfirmCallback(adapter as never, db, emptyProjects, contextStore, cb(`c:${recordId}`));
   ok(adapter.answers.at(-1)?.text === '已經確認過了', '重按提示「已經確認過了」');
   ok(adapter.edits.length === editsBefore, '不再就地更新訊息');
 
   // 4) 找不到紀錄
   console.log('4) 不存在的紀錄');
-  await handleConfirmCallback(adapter as never, db, emptyProjects, cb('c:99999'));
+  await handleConfirmCallback(adapter as never, db, emptyProjects, contextStore, cb('c:99999'));
   ok(adapter.answers.at(-1)?.text === '找不到這筆紀錄', '回「找不到這筆紀錄」');
 
   // 5) ✏️ 修改 → 叫出工地選單；此測試無工地 → 提示先設定工地
   console.log('5) 按 ✏️ 修改（無工地）');
-  await handleConfirmCallback(adapter as never, db, emptyProjects, cb(`e:${recordId}`));
+  await handleConfirmCallback(adapter as never, db, emptyProjects, contextStore, cb(`e:${recordId}`));
   ok(adapter.answers.at(-1)?.text?.includes('尚未設定工地') ?? false, '✏️ 無工地時提示先 /addproject');
 
   // 6) 未知動作
   console.log('6) 未知 callback data');
-  await handleConfirmCallback(adapter as never, db, emptyProjects, cb('x:1'));
+  await handleConfirmCallback(adapter as never, db, emptyProjects, contextStore, cb('x:1'));
   ok(adapter.answers.at(-1)?.text === '無法辨識的操作', '未知動作回「無法辨識的操作」');
 
   db.close();

@@ -321,7 +321,7 @@ async function main(): Promise<void> {
         const closedId = Number(cb.data.split(':')[1]);
         if (!Number.isNaN(closedId)) lastRecords.markClosed(closedId);
       }
-      await handleConfirmCallback(adapter, db, projectStore, cb);
+      await handleConfirmCallback(adapter, db, projectStore, contextStore, cb);
     } catch (err) {
       logger.error('處理按鈕回呼失敗', err instanceof Error ? err.message : err);
     }

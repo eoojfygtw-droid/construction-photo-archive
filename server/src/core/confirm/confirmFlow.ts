@@ -11,6 +11,7 @@ import type {
 } from '../../channels/MessageChannelAdapter';
 import type { Db } from '../../db';
 import type { ProjectStore } from '../projects/ProjectStore';
+import type { UserContextStore } from '../resolve/UserContextStore';
 import { handleSitePick, showSitePicker } from './siteFlow';
 import { logger } from '../../utils/logger';
 
@@ -64,6 +65,7 @@ export async function handleConfirmCallback(
   adapter: MessageChannelAdapter,
   db: Db,
   projectStore: ProjectStore,
+  contextStore: UserContextStore,
   cb: IncomingCallback,
 ): Promise<void> {
   const parts = cb.data.split(':');
@@ -87,7 +89,7 @@ export async function handleConfirmCallback(
   if (action === 's') {
     // 選定工地（code 可能含特殊碼 _keep；用 slice 保留完整）
     const code = parts.slice(2).join(':');
-    await handleSitePick(adapter, db, projectStore, cb, recordId, code);
+    await handleSitePick(adapter, db, projectStore, contextStore, cb, recordId, code);
     return;
   }
   await adapter.answerCallback(cb.callbackId, '無法辨識的操作');

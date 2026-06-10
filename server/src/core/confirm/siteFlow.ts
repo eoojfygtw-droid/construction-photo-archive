@@ -13,6 +13,7 @@ import type {
 } from '../../channels/MessageChannelAdapter';
 import type { Db } from '../../db';
 import type { ProjectStore } from '../projects/ProjectStore';
+import type { UserContextStore } from '../resolve/UserContextStore';
 import { reassignArchive, type ReassignPhoto } from '../records/archiver';
 import { logger } from '../../utils/logger';
 
@@ -69,6 +70,7 @@ export async function handleSitePick(
   adapter: MessageChannelAdapter,
   db: Db,
   projectStore: ProjectStore,
+  contextStore: UserContextStore,
   cb: IncomingCallback,
   recordId: number,
   code: string,
@@ -152,6 +154,11 @@ export async function handleSitePick(
   if (rec.status !== ASSIGNED_STATUS) {
     db.updateStatus(recordId, ASSIGNED_STATUS, cb.fromId);
   }
+
+  // 選單指定也算正向判定：記回報人 2 小時工地上下文，之後傳的照片走 recent_context 自動沿用。
+  // 記在「紀錄的回報人」（不是按按鈕的人）、時間錨在收件時間——
+  // 事後 ✏️ 改幾小時前的舊紀錄會自然過期，且不會把回報人較新的上下文蓋掉。
+  contextStore.setIfNewer(rec.reporterId, proj.code, Date.parse(rec.receivedAt));
 
   await adapter.answerCallback(cb.callbackId, '已歸檔 ✅');
   await adapter.editMessageText(
