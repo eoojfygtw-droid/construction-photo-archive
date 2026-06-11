@@ -31,15 +31,18 @@ const SEED_PATH = join('data', 'projects.seed.json');
 export class ProjectStore {
   private projects: Project[] = [];
 
+  /** seed 路徑可注入（管理後台 smoke 測試用暫存檔）；預設用正式路徑 */
+  constructor(private readonly seedPath: string = SEED_PATH) {}
+
   /** 從 seed 檔載入；檔案不存在則清單為空（可用 /addproject 新增） */
   async load(): Promise<void> {
-    if (!existsSync(SEED_PATH)) {
+    if (!existsSync(this.seedPath)) {
       logger.warn(
-        `找不到 ${SEED_PATH}，工地清單為空。可複製 projects.seed.example.json 或用 /addproject 新增。`,
+        `找不到 ${this.seedPath}，工地清單為空。可複製 projects.seed.example.json 或用 /addproject 新增。`,
       );
       return;
     }
-    const raw = await readFile(SEED_PATH, 'utf8');
+    const raw = await readFile(this.seedPath, 'utf8');
     this.projects = JSON.parse(raw) as Project[];
     logger.info(`載入工地清單 ${this.projects.length} 筆`);
   }
@@ -79,8 +82,8 @@ export class ProjectStore {
   /** 新增工地並寫回 seed 檔 */
   async add(project: Project): Promise<void> {
     this.projects.push(project);
-    await mkdir(dirname(SEED_PATH), { recursive: true });
-    await writeFile(SEED_PATH, JSON.stringify(this.projects, null, 2), 'utf8');
+    await mkdir(dirname(this.seedPath), { recursive: true });
+    await writeFile(this.seedPath, JSON.stringify(this.projects, null, 2), 'utf8');
   }
 
   /** 設定/更新某工地的中心座標與半徑（傳「位置」設 GPS 用），寫回 seed。找不到代碼回 false */
@@ -95,8 +98,8 @@ export class ProjectStore {
     p.centerLat = lat;
     p.centerLng = lng;
     p.radiusMeters = radiusMeters;
-    await mkdir(dirname(SEED_PATH), { recursive: true });
-    await writeFile(SEED_PATH, JSON.stringify(this.projects, null, 2), 'utf8');
+    await mkdir(dirname(this.seedPath), { recursive: true });
+    await writeFile(this.seedPath, JSON.stringify(this.projects, null, 2), 'utf8');
     return true;
   }
 }

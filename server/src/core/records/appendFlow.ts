@@ -130,7 +130,7 @@ export function findAppendTarget(
 }
 
 /** 取紀錄的歸檔目錄：有媒體用第一件所在目錄（經得起改工地搬移）；沒有就按規則推 */
-function dirOfRecord(db: Db, rec: RecordFull): string {
+export function dirOfRecord(db: Db, rec: RecordFull): string {
   const photos = db.getPhotos(rec.id);
   if (photos.length > 0) return dirname(photos[0].filePath);
   const d = new Date(rec.receivedAt);
@@ -145,8 +145,8 @@ function dirOfRecord(db: Db, rec: RecordFull): string {
   });
 }
 
-/** 用 DB 目前狀態重寫紀錄目錄的 metadata.json / text.txt（追加/拆單後同步） */
-async function rewriteRecordFiles(db: Db, recordId: number, dir: string): Promise<void> {
+/** 用 DB 目前狀態重寫紀錄目錄的 metadata.json / text.txt（追加/拆單後同步；後台改備註也用） */
+export async function rewriteRecordFiles(db: Db, recordId: number, dir: string): Promise<void> {
   const rec = db.getRecordFull(recordId);
   if (!rec) return;
   const photos = db.getPhotos(recordId);

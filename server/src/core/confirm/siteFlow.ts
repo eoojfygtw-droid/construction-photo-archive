@@ -65,6 +65,83 @@ export async function showSitePicker(
   );
 }
 
+/**
+ * 把紀錄重歸檔到指定工地（核心：搬檔 + metadata + DB；Telegram 與管理後台共用）。
+ * resolve_method 一律記 manual_pick（人工指定）；狀態進 ASSIGNED_STATUS 並寫歷程。
+ * 找不到紀錄回 null；其餘回傳重歸檔結果。
+ */
+export async function applyProjectReassign(
+  db: Db,
+  recordId: number,
+  proj: { code: string; name: string },
+  changedBy: string | null,
+): Promise<{ recordNo: string; dir: string; prevProjectCode: string | null } | null> {
+  const rec = db.getRecordFull(recordId);
+  if (!rec) return null;
+
+  // 沿用原收件日期分層（紀錄日期不變）
+  const d = new Date(rec.receivedAt);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const yyyy = String(d.getFullYear());
+  const mm = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+
+  const photos = db.getPhotos(recordId);
+  const reassignPhotos: ReassignPhoto[] = photos.map((p) => ({
+    photoId: p.id,
+    currentPath: p.filePath,
+    uploadType: p.uploadType,
+    bytes: p.bytes,
+    hasExif: p.hasExif,
+    exifTakenAt: p.exifTakenAt,
+    exifGps:
+      p.exifGpsLat != null && p.exifGpsLng != null
+        ? { latitude: p.exifGpsLat, longitude: p.exifGpsLng }
+        : null,
+  }));
+
+  // 搬檔重歸檔（resolve_method 標記為人工指定）
+  const RESOLVE_METHOD = 'manual_pick';
+  const result = await reassignArchive({
+    recordNo: rec.recordNo,
+    targetCode: proj.code,
+    targetName: proj.name,
+    yyyy,
+    mm,
+    dd,
+    photos: reassignPhotos,
+    meta: {
+      channel: rec.channel,
+      resolveMethod: RESOLVE_METHOD,
+      reporterId: rec.reporterId,
+      reporterName: rec.reporterName,
+      receivedAt: rec.receivedAt,
+      takenAt: rec.takenAt,
+      gps:
+        rec.gpsLat != null && rec.gpsLng != null
+          ? { latitude: rec.gpsLat, longitude: rec.gpsLng }
+          : null,
+      mediaGroupId: rec.mediaGroupId,
+      sourceMessageId: rec.sourceMessageId,
+      textNote: rec.textNote,
+    },
+  });
+
+  // 更新 DB：照片新路徑、工地、狀態
+  for (const p of result.photos) {
+    db.updatePhotoPath(p.photoId, p.archivedPath);
+  }
+  db.setProject(recordId, proj.code, proj.name, RESOLVE_METHOD);
+  if (rec.status !== ASSIGNED_STATUS) {
+    db.updateStatus(recordId, ASSIGNED_STATUS, changedBy);
+  }
+  return {
+    recordNo: rec.recordNo,
+    dir: result.dir,
+    prevProjectCode: rec.projectCode,
+  };
+}
+
 /** 選定工地 s:{recordId}:{code} 的處理 */
 export async function handleSitePick(
   adapter: MessageChannelAdapter,
@@ -98,61 +175,10 @@ export async function handleSitePick(
     return;
   }
 
-  // 沿用原收件日期分層（紀錄日期不變）
-  const d = new Date(rec.receivedAt);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const yyyy = String(d.getFullYear());
-  const mm = pad(d.getMonth() + 1);
-  const dd = pad(d.getDate());
-
-  const photos = db.getPhotos(recordId);
-  const reassignPhotos: ReassignPhoto[] = photos.map((p) => ({
-    photoId: p.id,
-    currentPath: p.filePath,
-    uploadType: p.uploadType,
-    bytes: p.bytes,
-    hasExif: p.hasExif,
-    exifTakenAt: p.exifTakenAt,
-    exifGps:
-      p.exifGpsLat != null && p.exifGpsLng != null
-        ? { latitude: p.exifGpsLat, longitude: p.exifGpsLng }
-        : null,
-  }));
-
-  // 搬檔重歸檔（resolve_method 標記為人工按鈕指定）
-  const RESOLVE_METHOD = 'manual_pick';
-  const result = await reassignArchive({
-    recordNo: rec.recordNo,
-    targetCode: proj.code,
-    targetName: proj.name,
-    yyyy,
-    mm,
-    dd,
-    photos: reassignPhotos,
-    meta: {
-      channel: rec.channel,
-      resolveMethod: RESOLVE_METHOD,
-      reporterId: rec.reporterId,
-      reporterName: rec.reporterName,
-      receivedAt: rec.receivedAt,
-      takenAt: rec.takenAt,
-      gps:
-        rec.gpsLat != null && rec.gpsLng != null
-          ? { latitude: rec.gpsLat, longitude: rec.gpsLng }
-          : null,
-      mediaGroupId: rec.mediaGroupId,
-      sourceMessageId: rec.sourceMessageId,
-      textNote: rec.textNote,
-    },
-  });
-
-  // 更新 DB：照片新路徑、工地、狀態
-  for (const p of result.photos) {
-    db.updatePhotoPath(p.photoId, p.archivedPath);
-  }
-  db.setProject(recordId, proj.code, proj.name, RESOLVE_METHOD);
-  if (rec.status !== ASSIGNED_STATUS) {
-    db.updateStatus(recordId, ASSIGNED_STATUS, cb.fromId);
+  const result = await applyProjectReassign(db, recordId, proj, cb.fromId);
+  if (!result) {
+    await adapter.answerCallback(cb.callbackId, '找不到這筆紀錄');
+    return;
   }
 
   // 選單指定也算正向判定：記回報人 2 小時工地上下文，之後傳的照片走 recent_context 自動沿用。

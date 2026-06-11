@@ -139,6 +139,8 @@ export class Db {
     const fresh = !existsSync(this.path);
     this.db = new DatabaseSync(this.path);
     this.db.exec('PRAGMA foreign_keys = ON;');
+    // bot 與管理後台可能同時寫入：碰到鎖最多等 2 秒，而不是立刻 SQLITE_BUSY
+    this.db.exec('PRAGMA busy_timeout = 2000;');
     this.db.exec(SCHEMA);
     logger.info(`SQLite 就緒：${this.path}${fresh ? '（新建）' : ''}`);
   }
