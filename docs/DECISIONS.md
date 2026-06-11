@@ -124,3 +124,9 @@
 ## 2026-06-05：嚴格分版，V0 驗收未過不進 V1
 - **決策**：V0（Bot 收訊→五層判斷→歸檔→SQLite→Bot 按鈕確認）驗收＝連續 5 個工作天實際使用、AI 欄位修正率 < 15%；過了才做 V1（語音/後台/Excel/狀態流），再 V2（前後照片關聯/逾期提醒/日報）。
 - **理由**：一開始做太大做不完是最大風險；先用最小管線換真實使用回饋。
+
+## 2026-06-11：驗收期同步啟動 V1 管理後台 web（部分推翻 6/8「不提前做後台」）
+- **決策**：應使用者「驗收同步測試下繼續推進」拍板，提前啟動 V1 管理後台（`npm run admin`，純 `node:http` 零新依賴，**只綁 127.0.0.1**），一日分 4 片完成：**5-A1 唯讀瀏覽**（儀表板導向、紀錄列表四篩選、詳細頁照片/錄音/EXIF/狀態歷程、媒體串流 `/media/{photoId}` 以 DB id 查路徑杜絕路徑穿越）→ **5-A2 狀態修改＋備註編輯**（狀態寫 status_logs `changed_by=後台網頁`、同狀態重送防呆；備註同步重寫歸檔目錄 `metadata.json`/`text.txt`）→ **5-A3 指定/改工地（含 _inbox 人工歸檔）**→ **5-A4 儀表板**（工地/狀態/判定方式統計、近 7 天趨勢、_inbox 警示捷徑）。6/8「只用唯讀日報、不提前做 V1 後台」的範圍限制就此解除；`npm run report` 日報保留續用。**匯出頁刻意不做**——檔名格式仍在等同學回饋，做了會白工。
+- **理由**：驗收期第 4 天主流程穩定（當日 5 筆全自動歸檔、0 修正），使用者判斷可平行推進。風險控制：讀取全走唯讀連線；寫入僅三個動作且**與 bot 共用同一套核心函式**（備註重用 `appendFlow.rewriteRecordFiles`、改工地重用自 `siteFlow` 抽出的 `applyProjectReassign`），不是第二套邏輯，後台操作的資料效果與 bot 按鈕完全一致。
+- **影響範圍**：新增 `server/src/admin/index.ts`、`scripts/smoke-admin.ts`（58 條，串入 `npm run test`）；`appendFlow` 匯出 `dirOfRecord`/`rewriteRecordFiles`；`siteFlow` 抽出 `applyProjectReassign`（bot 行為不變，smoke-confirm/site 全綠佐證）；`ProjectStore` 建構子可注入 seed 路徑（smoke 用暫存清單，不碰正式檔）；`Db.init` 加 `PRAGMA busy_timeout=2000`（bot 與後台同時寫入時等鎖 2 秒而非直接 SQLITE_BUSY）。
+- **已知限制（留給後續分版）**：①後台與 bot 是兩個程序，後台指定工地**不會**回寫 bot 記憶體內的 2 小時上下文（影響極小：後台多為事後補歸檔）；②後台不做工地設定管理——`projects.seed.json` 由 bot 程序寫入且常駐快取，跨程序雙寫有相互蓋寫風險，待 bot 支援 seed 重載再做；③匯出頁等同學回饋檔名格式後再做。

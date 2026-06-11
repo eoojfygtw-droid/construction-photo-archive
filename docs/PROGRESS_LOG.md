@@ -2,12 +2,35 @@
 
 > 時間軸。重大進展、踩雷、里程碑往這裡補。詳細規格演進另見 docs/HANDOFF.md「二、規格演進歷程」。
 
-## 2026-06-13 筆電：處理桌機/筆電分岔 + recent_context 定案 + 疑似擱置後台 🟡
+## 2026-06-13 筆電：處理桌機/筆電分岔 + recent_context 定案 + 後台確認上 GitHub 🟢
 筆電開工（家，C 槽；非 bot 主機，只動程式碼/docs/git）。本場無新功能，主要是**對齊與決策**：
 - **桌機/筆電分岔整合**：開工時筆電落後 origin **10 個 commit**（桌機 6/10 那批 bot 功能），同時筆電有**未提交的 6/09 工作**（repo 維持 public 安全盤點 + 「龍哥來了」彩蛋）origin 沒有。先把 6/09 工作 commit，再 `rebase` 到 origin/main 之上（衝突全為純新增，已逐一有腦合併：6/09 PROGRESS 條目插在 6/10 與 6/08 間、NEXT_ACTIONS「桌機 restart 待辦」更新為只剩龍哥彩蛋因 `/新增工地` 已於 6/10 套用、index.ts 彩蛋乾淨合進新版偷懶查詢之後）。typecheck + 7 支 smoke 全綠（16/15/19/20/14/16/34）。
 - **recent_context 2 小時固定窗定案維持**（見 DECISIONS 2026-06-13）：驗收期未見明顯誤歸、也無重問抱怨 → 不改程式碼；滑動窗否決（放大誤歸）。收掉 6/08「驗收期觀察」待決項。
 - **HANDOFF 更新**：最後更新日 6/05→6/13、補規格演進第 10 條（repo public、recent_context 定案、龍哥彩蛋）。
-- **⚠️ 疑似擱置後台（重要踩雷）**：使用者記得桌機「做過後台 + commit+push」，但筆電端窮舉檢查（所有 branch `main`/`gh-pages`/origin + C:\ 各 clone + stash）**找不到任何後台 commit**；桌機本 repo 最後一次真正 push＝`035f542`（6/10 bot 功能）。判斷：後台很可能**做了沒 push、擱在桌機 D 槽**（本機碰不到 D 槽）。已在 NEXT_ACTIONS **置頂給桌機的警告**（開工先 `git log origin/main..HEAD` 查、先 pull --rebase 再 push、絕不 force-push/reset --hard，確認後台上 GitHub 後刪警告）。待使用者回桌機確認。
+- **⚠️ 疑似擱置後台（重要踩雷）**：使用者記得桌機「做過後台 + commit+push」，但筆電端窮舉檢查（所有 branch `main`/`gh-pages`/origin + C:\ 各 clone + stash）**找不到任何後台 commit**；桌機本 repo 最後一次真正 push＝`035f542`（6/10 bot 功能）。判斷：後台很可能**做了沒 push、擱在桌機 D 槽**（本機碰不到 D 槽）。已在 NEXT_ACTIONS **置頂給桌機的警告**（開工先 `git log origin/main..HEAD` 查、先 pull --rebase 再 push、絕不 force-push/reset --hard，確認後台上 GitHub 後刪警告）。**✅ 2026-06-14 桌機開工結案**：後台確實「做了沒 push、擱在桌機」（即下方 6/11 那批 4 片）；本次 `git pull --rebase` 把筆電 6/13 那幾筆疊進來後一起 push，後台正式上 GitHub，置頂警告已撤。
+
+## 2026-06-11 ➕新增工地實戰驗證 + V1 管理後台提前啟動（4 片）🟢
+桌機開工。兩大塊：
+
+**上半：開工對證與實戰驗證**
+- 開工對證發現 NEXT_ACTIONS 警語過期：6/10 晚最後一筆 commit 在 21:06:10，activity.log 顯示 21:06:51 即重啟——**所有 6/10 功能當晚已生效**，今日 19:18 的重啟屬冗余（無害）。
+- **「➕ 新增工地」實戰驗證通過**（18:45）：實地新增工地 A002 → 傳定位正確判到 → 後續照片/錄音全自動歸檔併入（A002-20260611-004/-005），「暫存定位當中心＋設上下文」整條鏈實戰過關。
+- **驗收期第 4 天乾淨過關**：當日 5 筆全自動歸檔、_inbox 0、欄位修正 0（`npm run report` 巡檢三點皆綠）。
+
+**下半：V1 管理後台 web 提前啟動**（使用者拍板「驗收同步推進」，部分推翻 6/8「不提前做後台」，見 DECISIONS）。`npm run admin` → http://127.0.0.1:3300，純 `node:http` 零新依賴、只綁本機，一日 4 片：
+- **5-A1 唯讀瀏覽**：紀錄列表（日期/工地/狀態/判定方式四篩選，對齊 prototype）、詳細頁（照片縮圖/錄音播放/EXIF/狀態歷程）、媒體串流 `/media/{photoId}`（以 DB id 查路徑，無路徑穿越面）；讀取全程唯讀連線，與跑中 bot 零衝突。
+- **5-A2 狀態修改＋備註編輯**：狀態按鈕寫 `status_logs`（`changed_by=後台網頁`，同狀態重送防呆）；備註儲存同步重寫歸檔目錄 `metadata.json`/`text.txt`（重用 `appendFlow.rewriteRecordFiles`，檔案與 DB 不脫鉤）；POST 擋跨站 Origin。
+- **5-A3 指定/改工地（_inbox 人工歸檔）**：與 bot ✏️ 改工地共用自 `siteFlow` 抽出的 `applyProjectReassign` 核心（搬檔＋metadata＋DB＋狀態一條龍）；工地下拉依 seed 檔 mtime 快取自動重載。prototype「無法判斷工地頁」的人工歸檔自此有真實版。
+- **5-A4 儀表板**：總數/_inbox 警示卡、各狀態卡、近 7 天收件趨勢、各工地統計（含最後收件時間）、判定方式分布，全部可點進對應篩選；首頁導向儀表板。
+- 驗收期每日核對從此可直接用後台（日報 `npm run report` 保留續用）。**匯出頁刻意不做**——檔名格式等同學回饋。
+- 配套核心小改：`Db.init` 加 `busy_timeout=2000`（雙程序寫入等鎖）；`ProjectStore` seed 路徑可注入（測試隔離）。
+- **踩雷**：smoke 內 `fetch` keep-alive 連線未斷時 `process.exit` 會觸發 Windows libuv `UV_HANDLE_CLOSING` 斷言、以非零碼炸掉 test 鏈 → 改 `server.closeAllConnections()` ＋ `process.exitCode` 自然退場根治。
+- 全程 typecheck ＋ 8 支 smoke 全綠（archive 16 / confirm 15 / site 19 / location 20 / report 14 / voice 16 / append 34 / **admin 58**）；smoke-admin 用暫存 DB＋暫存 seed，不碰正式資料。
+- 紅線自查：後台只綁 127.0.0.1、照片不出本機；docs 內案場只寫代號（順手把 NEXT_ACTIONS 一處真實案場名改回代號）。
+
+### 下一步
+- 明日 6/12 跑滿驗收第 5 天；6/13 決定 recent_context 時間窗與 remove-bot 去留。
+- 後台後續分版：匯出（等回饋）、工地設定管理（待 bot seed 重載機制）、後台回寫上下文（跨程序，評估必要性）。
 
 ## 2026-06-10 晚間：錄音存檔 + 追加合併（封單只認 ✅）+ 選單指定記上下文 🟢
 桌機晚間接續做（中途 CLI 誤關一次，工作樹無遺失，接續驗證後補完）。三個功能、兩個實測修正，全程 typecheck + 7 支 smoke 全綠（archive 16 / confirm 13 / site 19 / location 13 / report 14 / voice 16 / append 30）：
