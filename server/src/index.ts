@@ -95,6 +95,12 @@ async function main(): Promise<void> {
       return;
     }
 
+    // 「龍哥來了」彩蛋：誰都能觸發，回「快跑！」，不進歸檔流程
+    if (isDragonBrotherAlert(msg.text)) {
+      await adapter.sendMessage(msg.chatId, '快跑！🏃💨');
+      return;
+    }
+
     // 指令（/addproject、/help…）優先，不當成一筆紀錄
     if (await handleCommand(adapter, msg, projectStore, pendingSite, pendingLocations, contextStore)) return;
 
@@ -358,6 +364,11 @@ async function main(): Promise<void> {
 /** 是不是在問「有沒有偷懶」（訊息含「偷懶」二字即觸發） */
 function isSlackingQuery(text?: string): boolean {
   return !!text && text.includes('偷懶');
+}
+
+/** 是不是在喊「龍哥來了」（彩蛋，回「快跑！」） */
+function isDragonBrotherAlert(text?: string): boolean {
+  return !!text && text.includes('龍哥來了');
 }
 
 /** 本機時間字串 YYYY-MM-DD HH:MM:SS（通知訊息用,讓訊息本身自帶時間） */

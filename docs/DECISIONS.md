@@ -2,6 +2,11 @@
 
 > 設計決策依日期排序。詳細演進脈絡見 docs/HANDOFF.md。
 
+## 2026-06-09：repo 維持 public（個資/機密盤點通過）
+- **決策**：GitHub repo `construction-photo-archive` 維持 **public**，不改 private，`.gitignore` 不需調整。
+- **理由**：完整盤點確認 repo 內無任何真實個資/機密——無真實地址/門牌/電話/身分證；git **全歷史**未曾追蹤 `.env`/照片/`server/data/`/db、無殘留 token；唯一具體案名「信義豪宅案」為虛構測試範例。真實工地清單（座標/案名）只存桌機本機 `server/data/projects.seed.json`，被 `.gitignore` 擋死、永不進 git，他人 `clone` 亦取得不到（須自配 seed 或 `/新增工地`）。public 利於當作品集／他人 `clone`／`Use this template` 自行另行開發。
+- **關鍵釐清**：repo 可見性（public/private）是 **GitHub 雲端的單一屬性**，與桌機/筆電本機無關、改它**不會造成兩端資料錯置**；任一裝置開網頁（Settings → Change visibility）操作即可。真正「必須分機器」的只有背景常駐 bot（只在桌機跑）。
+
 ## 2026-06-05：訊息通道採 Telegram，但強制 adapter 介面
 - **決策**：V0 用 Telegram Bot（long polling，免公開網址，API 免費，開發最快）。訊息接收層必須寫成 `MessageChannelAdapter` 介面，核心邏輯不依賴特定平台。
 - **理由**：初期使用者僅 1–3 人（特助自用），Telegram 部署成本最低；但台灣工地全員推行阻力大，未來可能須換 LINE（webhook + 公開 HTTPS），故用 adapter 預留換道空間、避免重寫。

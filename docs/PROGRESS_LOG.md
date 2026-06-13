@@ -18,6 +18,12 @@
 - **單獨傳「定位」改主動回應**：過去純位置訊息只默默更新上下文、不回任何訊息，現場體感像「bot 死了」。新增 `core/confirm/locationFlow.ts`：判得出（telegram_location / recent_context）→ 回覆判定到的工地＋「✏️ 不是這個 / 改工地」；判不出 → 直接跳工地選單問「你現在在哪個工地？」。使用者點選**只設「目前工地上下文」**（供 2 小時 recent_context 沿用），不建檔、不動 projects.json、不搬檔——維持「純位置不建檔」原則。`loc:` 回呼前綴與 siteFlow 的 `s:`（已建檔重歸）分離。
 - **新增 `scripts/smoke-location.ts`**（5 案例：範圍內命中 / 範圍外選單 / `_pick` 完整選單 / `_skip` 略過 / 選定後沿用），串入 `npm run test`（現 5 支：archive 16 / confirm 13 / site 16 / location / report 14）。typecheck + smoke 全綠（18:45 commit 851afa8 前重跑確認）。
 - **17:42 `restart-bot.cmd` 重啟背景 bot**：6/8 的 `/新增工地` 新版＋本日定位互動**皆已套用生效**（佐證：activity.log 17:42:48 完整啟動序列、node 程序啟動時間一致；原始檔最後修改 17:35–17:37 皆早於重啟）。NEXT_ACTIONS「桌機 restart 待辦」清除。
+## 2026-06-09 筆電：repo 公開/私有安全盤點 + 「龍哥來了」彩蛋 🟢
+筆電開工接續（筆電非 bot 主機，只做程式碼/docs/git）。
+- **安全盤點（為決定 repo 維持 public）**：掃追蹤檔無真實地址/門牌/手機/身分證號；`git log --all` 確認歷史**從未**追蹤過 `.env`/`server/data/`/照片/db、無殘留 bot token；唯一具體案名「信義豪宅案」經使用者確認為**虛構測試範例**（免改）。確認真實工地清單 `server/data/projects.seed.json`（`ProjectStore` 讀寫）與所有執行期資料**只在桌機本機**、被 `.gitignore:33 server/data/` 擋死（`git check-ignore` 證實），永不進 git／不到筆電／不上 GitHub。結論：**repo 維持 public 無外洩風險**（見 DECISIONS 2026-06-09）。
+- **踩雷（自我糾正）**：一度誤判「`.gitignore` 沒擋 `projects.seed.json`、要補一行」——**錯**。真 seed 在 `data/` 底下早被 `server/data/` 擋住；誤以為它在 server 根目錄（那裡只有追蹤中的 `projects.seed.example.json` 範本）。已撤回，不需改 gitignore。
+- **新增「龍哥來了」彩蛋**（`src/index.ts`）：訊息含「龍哥來了」→ bot 回「快跑！🏃💨」。仿「偷懶」查詢做法（新增 `isDragonBrotherAlert`，在 `onRecordReady` 開頭 early return），**不分群、誰都能觸發、不進歸檔流程**。`typecheck` + 4 支 smoke（16/13/16/14）全綠。
+> 註：彩蛋需在**桌機** `restart-bot.cmd` 套用到背景 bot 後才生效；筆電僅驗證程式碼。（`/新增工地` 新版已於 2026-06-10 17:42 restart 套用；本彩蛋因 6/10 後才合併入庫，仍待下次 restart 才生效。）
 
 ## 2026-06-08 新增工地改為現場可用（座標可選 / 傳位置設中心）+ 中文指令別名 🟢
 驗收期間點出 `/addproject` 強制手打經緯度對工地現場根本不可行。改成：①指令加中文別名 **`/新增工地`**（`/addproject` 仍可用）；②**座標可選**——`/新增工地 代碼 名稱` 就能建（先用 `#代碼` 歸檔），加完**傳一個「位置」📍**即自動設成工地中心、開 GPS 自動歸檔；③一次帶全 `代碼 名稱 緯度 經度 [半徑]` 仍可用（供代查座標後貼）。新增 `PendingSiteStore`、`ProjectStore.setCenter`，`Project` 的 center/radius 改 `number | null`。typecheck + 4 支 smoke（16/13/16/14）全綠。
