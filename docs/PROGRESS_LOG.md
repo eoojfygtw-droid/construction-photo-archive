@@ -2,6 +2,13 @@
 
 > 時間軸。重大進展、踩雷、里程碑往這裡補。詳細規格演進另見 docs/HANDOFF.md「二、規格演進歷程」。
 
+## 2026-06-13 筆電：處理桌機/筆電分岔 + recent_context 定案 + 疑似擱置後台 🟡
+筆電開工（家，C 槽；非 bot 主機，只動程式碼/docs/git）。本場無新功能，主要是**對齊與決策**：
+- **桌機/筆電分岔整合**：開工時筆電落後 origin **10 個 commit**（桌機 6/10 那批 bot 功能），同時筆電有**未提交的 6/09 工作**（repo 維持 public 安全盤點 + 「龍哥來了」彩蛋）origin 沒有。先把 6/09 工作 commit，再 `rebase` 到 origin/main 之上（衝突全為純新增，已逐一有腦合併：6/09 PROGRESS 條目插在 6/10 與 6/08 間、NEXT_ACTIONS「桌機 restart 待辦」更新為只剩龍哥彩蛋因 `/新增工地` 已於 6/10 套用、index.ts 彩蛋乾淨合進新版偷懶查詢之後）。typecheck + 7 支 smoke 全綠（16/15/19/20/14/16/34）。
+- **recent_context 2 小時固定窗定案維持**（見 DECISIONS 2026-06-13）：驗收期未見明顯誤歸、也無重問抱怨 → 不改程式碼；滑動窗否決（放大誤歸）。收掉 6/08「驗收期觀察」待決項。
+- **HANDOFF 更新**：最後更新日 6/05→6/13、補規格演進第 10 條（repo public、recent_context 定案、龍哥彩蛋）。
+- **⚠️ 疑似擱置後台（重要踩雷）**：使用者記得桌機「做過後台 + commit+push」，但筆電端窮舉檢查（所有 branch `main`/`gh-pages`/origin + C:\ 各 clone + stash）**找不到任何後台 commit**；桌機本 repo 最後一次真正 push＝`035f542`（6/10 bot 功能）。判斷：後台很可能**做了沒 push、擱在桌機 D 槽**（本機碰不到 D 槽）。已在 NEXT_ACTIONS **置頂給桌機的警告**（開工先 `git log origin/main..HEAD` 查、先 pull --rebase 再 push、絕不 force-push/reset --hard，確認後台上 GitHub 後刪警告）。待使用者回桌機確認。
+
 ## 2026-06-10 晚間：錄音存檔 + 追加合併（封單只認 ✅）+ 選單指定記上下文 🟢
 桌機晚間接續做（中途 CLI 誤關一次，工作樹無遺失，接續驗證後補完）。三個功能、兩個實測修正，全程 typecheck + 7 支 smoke 全綠（archive 16 / confirm 13 / site 19 / location 13 / report 14 / voice 16 / append 30）：
 - **錄音存檔**：Telegram 語音/音訊**當媒體歸檔**——沿用照片下載→搬檔→DB 管線，`upload_type=voice`、不改表、不轉文字（Whisper 仍 V1）；副檔名取平台路徑、缺漏依 MIME 推斷（audio/ogg→.oga）；Bot 回覆分開顯示「🎤 錄音：N 則」。原本語音訊息被忽略不建檔的洞補掉。新增 `smoke-voice.ts`。
