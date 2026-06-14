@@ -129,7 +129,11 @@ export async function handleCommand(
           pending.set(msg.reporterId, upperCode, Date.now());
           await adapter.sendMessage(
             msg.chatId,
-            `✅ 已新增工地：${upperCode} ${name}${codeNote}\n現在就能用 #${upperCode}（或裸碼 ${upperCode}）歸檔。\n📍 想開 GPS 自動歸檔的話，10 分鐘內傳一個「位置」給我，我把它設成 ${upperCode} 的中心。`,
+            `✅ 已新增工地：${upperCode} ${name}${codeNote}\n` +
+              `⚠️ 現在直接傳照片還「不會」自動歸到這裡（這個工地還沒中心、也沒設自動歸窗），會判不出進待歸檔。\n` +
+              `要自動歸，二選一：\n` +
+              `① 照片訊息帶 #${upperCode}（或裸碼 ${upperCode}）。\n` +
+              `② 人在現場：10 分鐘內傳一個「位置」📍給我 → 我把它設成 ${upperCode} 的中心並開 2 小時自動歸，之後照片免標自動跟著歸。`,
           );
         }
       }

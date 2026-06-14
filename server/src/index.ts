@@ -293,12 +293,12 @@ async function main(): Promise<void> {
             // 該回報人這批的第一張（或距上次選單已逾去抖期）才送選單，避免每張洗版
             await adapter.sendMessageWithButtons(
               msg.chatId,
-              `⚠️ 判不出工地，已暫存待歸檔。\n選一個工地，把這批連續判不出的照片一起歸過去：\n💡 下次到現場第一張先打代碼（如 A001）或先傳定位，後面就會自動跟著歸、不用每次選。`,
+              `⚠️ 判不出工地，已暫存待歸檔（${recordNo}）。\n選一個工地，把這批連續判不出的照片一起歸過去：\n💡 下次到現場第一張先打代碼（如 A001）或先傳定位，後面就會自動跟著歸、不用每次選。`,
               buildBatchSitePickerButtons(projectStore, msg.reporterId),
               1,
             );
           }
-          // 去抖期內的後續判不出：靜默累積，等使用者點上面那則選單一次全歸
+          // 去抖期內的後續判不出：靜默累積（各自已拿到 INBOX 暫存編號），等使用者點上面那則選單一次全歸
         } else {
           await adapter.sendMessage(
             msg.chatId,
