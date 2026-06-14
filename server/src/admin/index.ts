@@ -266,6 +266,14 @@ function queryStats(dbPath: string): {
   }
 }
 
+/** 報告頁的一張代表照片，帶所屬紀錄的編號、文字註解，以及該筆的錄音（若有，放大層裡播放） */
+interface ReportMedia {
+  id: number; // 照片 photo id（走 /media/{id} 串流）
+  recordNo: string;
+  note: string | null; // 該筆的文字註解（放大層顯示）
+  audioId: number | null; // 該筆的錄音 photo id（放大層「錄音」鈕播放用）；無則 null
+}
+
 /** 報告頁一個工地（或 _inbox）一塊 */
 interface ReportGroup {
   code: string | null; // null = _inbox 判不出
@@ -273,7 +281,7 @@ interface ReportGroup {
   count: number;
   byStatus: Map<string, number>;
   lastReceivedAt: string;
-  thumbIds: number[]; // 代表照片的 photo id（可顯示影像、檔案存在；上限見 THUMB_CAP）
+  media: ReportMedia[]; // 代表媒體（圖片可放大、錄音可播放；上限見 MEDIA_CAP）
 }
 
 /** 報告頁資料：指定區間內，按工地聚合 */
@@ -287,19 +295,20 @@ interface ReportData {
   groups: ReportGroup[]; // 工地依筆數多到少；_inbox 排最後
 }
 
-/** 每個工地最多挑幾張代表照片 */
-const THUMB_CAP = 6;
+/** 每個工地代表照片上限 */
+const IMAGE_CAP = 8;
 
 /**
  * 報告頁查詢：收件日落在 [from, to]（本機日期、含端點）的紀錄，按工地聚合。
- * 代表照片只取「瀏覽器可顯示、且檔案存在」的影像，每工地上限 THUMB_CAP 張。
+ * 代表媒體只放「可顯示照片」當縮圖（每工地上限 IMAGE_CAP），每張帶該筆的編號、文字註解，
+ * 以及該筆的錄音 id（若有）——錄音不單獨列在報告頁，改在放大層裡按鈕播放。
  */
 function queryReport(dbPath: string, preset: string, from: string, to: string): ReportData {
   const db = openRo(dbPath);
   try {
     const recs = db
       .prepare(
-        `SELECT id, project_code, project_name, status, received_at FROM records`,
+        `SELECT id, record_no, project_code, project_name, status, text_note, received_at FROM records`,
       )
       .all() as Record<string, unknown>[];
 
@@ -308,10 +317,16 @@ function queryReport(dbPath: string, preset: string, from: string, to: string): 
       const d = localDateStr(r.received_at as string);
       return d >= from && d <= to;
     });
-    const recIds = new Set(inRange.map((r) => r.id as number));
-    // record id → 工地 key（code 或 '_inbox'），給縮圖歸組用
-    const recKey = new Map<number, string>(
-      inRange.map((r) => [r.id as number, (r.project_code as string | null) ?? '_inbox']),
+    // record id → 該筆中繼（工地 key、編號、文字註解），給媒體歸組與標註用
+    const recMeta = new Map<number, { key: string; recordNo: string; note: string | null }>(
+      inRange.map((r) => [
+        r.id as number,
+        {
+          key: (r.project_code as string | null) ?? '_inbox',
+          recordNo: r.record_no as string,
+          note: (r.text_note as string | null) ?? null,
+        },
+      ]),
     );
 
     const groupMap = new Map<string, ReportGroup>();
@@ -328,7 +343,7 @@ function queryReport(dbPath: string, preset: string, from: string, to: string): 
           count: 0,
           byStatus: new Map(),
           lastReceivedAt: r.received_at as string,
-          thumbIds: [],
+          media: [],
         };
         groupMap.set(key, g);
       }
@@ -340,20 +355,40 @@ function queryReport(dbPath: string, preset: string, from: string, to: string): 
       byStatus.set(st, (byStatus.get(st) ?? 0) + 1);
     }
 
-    // 代表照片：只取區間內紀錄、可顯示影像、檔案存在，每組上限 THUMB_CAP
+    // 先把每筆的「照片清單」與「第一個錄音」分出來（只取檔案存在、可顯示 / 可播放者）
     const photos = db
       .prepare(`SELECT id, record_id, file_path, upload_type FROM photos ORDER BY id`)
       .all() as Record<string, unknown>[];
+    const recImages = new Map<number, number[]>(); // record id → 照片 photo id（依 id 序）
+    const recAudio = new Map<number, number>(); // record id → 第一個錄音 photo id
     for (const p of photos) {
       const rid = p.record_id as number;
-      if (!recIds.has(rid)) continue;
-      const uploadType = (p.upload_type as string | null) ?? null;
-      if (uploadType === 'voice' || uploadType === 'audio') continue;
+      if (!recMeta.has(rid)) continue; // 不在區間
       const filePath = p.file_path as string;
+      if (!existsSync(filePath)) continue;
       const ext = extname(filePath).toLowerCase();
-      if (!DISPLAYABLE.has(ext) || !existsSync(filePath)) continue;
-      const g = groupMap.get(recKey.get(rid) as string);
-      if (g && g.thumbIds.length < THUMB_CAP) g.thumbIds.push(p.id as number);
+      const uploadType = (p.upload_type as string | null) ?? null;
+      if ((uploadType === 'voice' || uploadType === 'audio') && PLAYABLE_AUDIO.has(ext)) {
+        if (!recAudio.has(rid)) recAudio.set(rid, p.id as number); // 一筆只取一個錄音
+      } else if (DISPLAYABLE.has(ext)) {
+        const arr = recImages.get(rid) ?? [];
+        arr.push(p.id as number);
+        recImages.set(rid, arr);
+      }
+      // HEIC / 不支援 → 報告頁不放（詳細頁仍有佔位卡）
+    }
+
+    // 代表照片：依紀錄順序填進各工地，每張帶該筆的錄音 id（放大層按鈕播放用），每組上限 IMAGE_CAP
+    for (const r of inRange) {
+      const rid = r.id as number;
+      const meta = recMeta.get(rid);
+      const g = meta ? groupMap.get(meta.key) : undefined;
+      if (!meta || !g) continue;
+      const audioId = recAudio.get(rid) ?? null;
+      for (const imgId of recImages.get(rid) ?? []) {
+        if (g.media.length >= IMAGE_CAP) break;
+        g.media.push({ id: imgId, recordNo: meta.recordNo, note: meta.note, audioId });
+      }
     }
 
     const groups = [...groupMap.values()].sort((a, b) => {
@@ -532,12 +567,26 @@ const CSS = `
   .rpt-proj h3 a { color: #1f2d3d; text-decoration: none; }
   .rpt-proj h3 .cnt { font-size: 12px; color: #777; font-weight: normal; margin-left: auto; }
   .rpt-status { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-  .rthumbs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .rthumbs { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
+  .rthumb { position: relative; padding: 0; border: 0; background: none; cursor: zoom-in; line-height: 0; }
   .rthumb img { width: 120px; height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid #ddd; background: #000; display: block; }
+  .rthumb:hover img { border-color: #2d6cdf; }
+  .thumb-mic { position: absolute; right: 4px; bottom: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,.62); color: #fff; font-size: 12px; line-height: 22px; text-align: center; }
   .rthumbs-empty { font-size: 12px; color: #aaa; }
+  /* 頁內放大層（lightbox） */
+  .lb { display: none; position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.82); align-items: center; justify-content: center; padding: 28px; box-sizing: border-box; }
+  .lb.show { display: flex; }
+  .lb-box { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 14px; max-width: 94vw; max-height: 94vh; }
+  .lb-box img { max-width: 94vw; max-height: 78vh; object-fit: contain; border-radius: 6px; background: #000; }
+  #lb-audio { width: min(82vw, 520px); }
+  #lb-cap { color: #fff; font-size: 24px; line-height: 1.6; font-weight: 500; max-width: 82vw; text-align: center; white-space: pre-wrap; word-break: break-word; }
+  .lb-actions { display: flex; gap: 10px; }
+  .lb-btn { padding: 7px 18px; border: 1px solid #ffffff66; border-radius: 6px; background: transparent; color: #fff; font-size: 14px; cursor: pointer; }
+  .lb-btn:hover { background: #ffffff22; }
+  #lb-play { border-color: #7fc4ff; color: #cfe6ff; }
   /* 列印 / 存 PDF：藏掉導覽與控制列，背景轉白，每個工地區塊不跨頁切斷 */
   @media print {
-    header nav, form.report-ctrl, footer, .back { display: none !important; }
+    header nav, form.report-ctrl, footer, .back, #lb { display: none !important; }
     header { position: static; }
     body { background: #fff; }
     a { color: inherit !important; }
@@ -750,23 +799,72 @@ function renderReport(data: ReportData): string {
         })
         .map(([st, n]) => `<span class="badge st ${statusClass(st)}">${esc(st)} ${n}</span>`)
         .join('');
-      const thumbs = g.thumbIds.length
-        ? `<div class="rthumbs">${g.thumbIds
-            .map(
-              (id) =>
-                `<a class="rthumb" href="/media/${id}" target="_blank" rel="noopener"><img src="/media/${id}" loading="lazy" alt="代表照片"></a>`,
-            )
-            .join('')}</div>`
+      // 縮圖只放照片；點擊開放大層。該筆若有錄音，縮圖右下角標 🎤、並帶 data-audio
+      // 供放大層的「錄音」鈕播放（錄音本身不出現在報告頁）。
+      const mediaHtml = g.media
+        .map((m) => {
+          const audioAttr = m.audioId != null ? ` data-audio="/media/${m.audioId}"` : '';
+          const mic = m.audioId != null ? '<span class="thumb-mic" title="此照片所屬紀錄有錄音">🎤</span>' : '';
+          return `<button type="button" class="rthumb" data-img="/media/${m.id}"${audioAttr} data-rno="${esc(m.recordNo)}" data-note="${esc(m.note)}" onclick="openLb(this)"><img src="/media/${m.id}" loading="lazy" alt="代表照片">${mic}</button>`;
+        })
+        .join('');
+      const media = g.media.length
+        ? `<div class="rthumbs">${mediaHtml}</div>`
         : '<div class="rthumbs-empty">（此區間無可預覽照片）</div>';
       return `<section class="rpt-proj${isInbox ? ' inbox' : ''}">
         <h3><a href="${href}">${title}</a><span class="cnt">${g.count} 筆 · 最後 ${esc(localDateTimeStr(g.lastReceivedAt))}</span></h3>
         <div class="rpt-status">${statusBits}</div>
-        ${thumbs}
+        ${media}
       </section>`;
     })
     .join('');
 
-  return page('報告 — 管理後台', sum, ctrl + sections);
+  // 頁內放大層（lightbox）：點縮圖把大圖／錄音播放器＋編號＋文字註解放上來；
+  // 點背景任一處（或 Esc / 關閉）收起，可再點下一張。框內 stopPropagation，
+  // 避免點到圖或操作播放器時誤關。錄音在這一層裡播放（不內嵌在報告頁）。
+  const lightbox = `
+  <div id="lb" class="lb" onclick="closeLb()">
+    <figure class="lb-box" onclick="event.stopPropagation()">
+      <img id="lb-img" alt="放大照片">
+      <figcaption id="lb-cap"></figcaption>
+      <audio id="lb-audio" controls preload="none" style="display:none"></audio>
+      <div class="lb-actions">
+        <button type="button" id="lb-play" class="lb-btn" onclick="playLbAudio()" style="display:none">🎤 播放錄音</button>
+        <button type="button" class="lb-btn" onclick="closeLb()">關閉 ✕</button>
+      </div>
+    </figure>
+  </div>
+  <script>
+    function openLb(el){
+      var lb=document.getElementById('lb');
+      document.getElementById('lb-img').src=el.getAttribute('data-img');
+      var rno=el.getAttribute('data-rno')||'';
+      var note=el.getAttribute('data-note')||'';
+      document.getElementById('lb-cap').textContent=note?(rno+'　'+note):rno;
+      // 該照片所屬紀錄若有錄音 → 顯示「播放錄音」鈕（先備好來源，按了才播）
+      var aud=document.getElementById('lb-audio');
+      var playBtn=document.getElementById('lb-play');
+      aud.pause(); aud.style.display='none';
+      var audioSrc=el.getAttribute('data-audio');
+      if(audioSrc){ aud.src=audioSrc; playBtn.style.display=''; }
+      else{ aud.removeAttribute('src'); playBtn.style.display='none'; }
+      lb.classList.add('show');
+    }
+    function playLbAudio(){
+      var aud=document.getElementById('lb-audio');
+      aud.style.display='block';                       // 顯示播放器供暫停/拖曳
+      document.getElementById('lb-play').style.display='none';
+      try{ aud.currentTime=0; aud.play(); }catch(e){}
+    }
+    function closeLb(){
+      document.getElementById('lb').classList.remove('show');
+      document.getElementById('lb-img').removeAttribute('src');
+      var aud=document.getElementById('lb-audio'); aud.pause(); aud.removeAttribute('src'); aud.style.display='none';
+    }
+    document.addEventListener('keydown',function(e){if(e.key==='Escape')closeLb();});
+  </script>`;
+
+  return page('報告 — 管理後台', sum, ctrl + sections + lightbox);
 }
 
 /** 詳細頁的單件媒體（照片 <img>、錄音 <audio>、其他佔位卡；來源一律走 /media/{id}） */

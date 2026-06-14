@@ -207,12 +207,22 @@ async function run() {
     ok(rpt.text.includes('煙測工地A') && rpt.text.includes('工地乙'), '報告含兩個工地分區');
     ok(rpt.text.includes('_inbox 判不出（待歸檔）'), '報告含 _inbox 待歸檔分區');
     ok(rpt.text.includes(`/media/${photoId1}`), '工地分區放代表照片縮圖');
-    ok(rpt.text.includes('rthumbs-empty'), '無可預覽照片的工地顯示佔位字');
+    ok(rpt.text.includes('rthumbs-empty'), '無可預覽媒體的工地顯示佔位字');
     ok(
       rpt.text.indexOf('_inbox 判不出（待歸檔）') > rpt.text.indexOf('煙測工地A'),
       '_inbox 分區排在工地之後',
     );
     ok(rpt.text.includes('window.print()'), '列印友善：有 window.print 觸發');
+    // 縮圖頁內放大（非開新視窗）：走 lightbox + onclick，不再有 target=_blank 開新視窗
+    ok(rpt.text.includes('onclick="openLb(this)"') && rpt.text.includes('id="lb"'), '縮圖點擊走頁內放大（lightbox）');
+    ok(!rpt.text.includes('rthumb" href') && !rpt.text.includes('target="_blank"'), '縮圖不再開新視窗');
+    // 放大檢視帶出文字註解（A001 備註「三樓樑柱裂縫，需複查」放在縮圖 data-note）
+    ok(rpt.text.includes('data-note="三樓樑柱裂縫，需複查"'), '放大檢視帶出文字註解');
+    // 錄音只在放大層裡播放：有錄音的照片帶 data-audio + 右下角 🎤 標記；報告頁不內嵌、不單列錄音
+    ok(rpt.text.includes(`data-audio="/media/`) && rpt.text.includes('thumb-mic'), '有錄音的照片標 🎤 並帶錄音來源');
+    ok(rpt.text.includes('id="lb-play"') && rpt.text.includes('playLbAudio'), '放大層有「播放錄音」按鈕');
+    ok(rpt.text.includes('id="lb-audio"'), '放大層內含錄音元素');
+    ok(!rpt.text.includes('class="raudio"') && !rpt.text.includes('rthumb-audio'), '報告頁不內嵌、不單列錄音');
 
     const rptEmpty = await get('/report?preset=custom&from=2026-01-01&to=2026-01-02');
     ok(rptEmpty.text.includes('沒有任何紀錄'), '空區間顯示無紀錄');
