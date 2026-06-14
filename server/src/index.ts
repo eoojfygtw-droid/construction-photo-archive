@@ -14,6 +14,7 @@ import { MediaGroupAggregator } from './core/ingest/MediaGroupAggregator';
 import { ProjectStore } from './core/projects/ProjectStore';
 import { PendingSiteStore } from './core/projects/PendingSiteStore';
 import { PendingLocationStore } from './core/projects/PendingLocationStore';
+import { PendingInboxStore } from './core/projects/PendingInboxStore';
 import { UserContextStore } from './core/resolve/UserContextStore';
 import { SiteResolver } from './core/resolve/SiteResolver';
 import { handleCommand } from './core/commands/handleCommand';
@@ -23,7 +24,10 @@ import {
   handleConfirmCallback,
   promptConfirm,
 } from './core/confirm/confirmFlow';
-import { buildSitePickerButtons } from './core/confirm/siteFlow';
+import {
+  buildBatchSitePickerButtons,
+  handleBatchSitePick,
+} from './core/confirm/siteFlow';
 import {
   promptBareLocation,
   isLocationCallback,
@@ -79,6 +83,7 @@ async function main(): Promise<void> {
   const resolver = new SiteResolver(projectStore, contextStore);
   const lastRecords = new LastRecordStore(); // 追加合併：每人最近一筆紀錄
   const appendStore = new AppendStore(); // 追加合併：拆單反悔用
+  const pendingInbox = new PendingInboxStore(); // 冷啟動：累積判不出照片、批次歸檔
 
   // 目前綁 Telegram；未來換 LINE 只要換成另一個 adapter 實作，以下程式碼不動
   const adapter: MessageChannelAdapter = new TelegramAdapter(config);
@@ -279,15 +284,21 @@ async function main(): Promise<void> {
           reporterName: msg.reporterName,
         });
       } else {
-        // 判不出工地（第 5 層）：送工地選單讓使用者點選；無工地可選則純文字提示
+        // 判不出工地（第 5 層）：冷啟動連續判不出會每張洗版，改為累積+去抖批次處理。
         const activeProjects = projectStore.listActive();
         if (activeProjects.length > 0) {
-          await adapter.sendMessageWithButtons(
-            msg.chatId,
-            `⚠️ 判不出工地（${recordNo}），已暫存 _inbox。請選擇正確工地：`,
-            buildSitePickerButtons(projectStore, recordId),
-            1,
-          );
+          const now = Date.now();
+          pendingInbox.add(msg.reporterId, recordId, now);
+          if (pendingInbox.shouldPrompt(msg.reporterId, now)) {
+            // 該回報人這批的第一張（或距上次選單已逾去抖期）才送選單，避免每張洗版
+            await adapter.sendMessageWithButtons(
+              msg.chatId,
+              `⚠️ 判不出工地，已暫存待歸檔。\n選一個工地，把這批連續判不出的照片一起歸過去：\n💡 下次到現場第一張先打代碼（如 A001）或先傳定位，後面就會自動跟著歸、不用每次選。`,
+              buildBatchSitePickerButtons(projectStore, msg.reporterId),
+              1,
+            );
+          }
+          // 去抖期內的後續判不出：靜默累積，等使用者點上面那則選單一次全歸
         } else {
           await adapter.sendMessage(
             msg.chatId,
@@ -321,6 +332,23 @@ async function main(): Promise<void> {
       // sp:… 為「拆成新筆」（追加合併的反悔鈕）
       if (isSplitCallback(cb)) {
         await handleSplitCallback(adapter, db, lastRecords, appendStore, cb, Date.now());
+        return;
+      }
+      // sb:{reporterId}:{code} 為「批次歸檔」——把該回報人累積的判不出照片一次歸過去
+      if (cb.data.startsWith('sb:')) {
+        const parts = cb.data.split(':');
+        const reporterId = parts[1] ?? '';
+        const code = parts.slice(2).join(':');
+        await handleBatchSitePick(
+          adapter,
+          db,
+          projectStore,
+          contextStore,
+          pendingInbox,
+          cb,
+          reporterId,
+          code,
+        );
         return;
       }
       // ✅ 確認（c:{id}）＝封單：之後的語音/文字不再自動併入這筆。

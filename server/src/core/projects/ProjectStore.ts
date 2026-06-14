@@ -79,6 +79,36 @@ export class ProjectStore {
     return best;
   }
 
+  /**
+   * 自動編下一個可用工地代碼。
+   * 前綴自適應現有習慣：取現有「字母+數字」代碼中最常用的前綴（沒有則用 A），
+   * 再從 001 遞增找第一個還沒被佔用的（不重用、不撞號）。
+   */
+  nextAutoCode(): string {
+    const prefixCount = new Map<string, number>();
+    for (const p of this.projects) {
+      const m = /^([A-Za-z]+)\d+$/.exec(p.code);
+      if (m) {
+        const pre = m[1].toUpperCase();
+        prefixCount.set(pre, (prefixCount.get(pre) ?? 0) + 1);
+      }
+    }
+    let prefix = 'A';
+    let best = 0;
+    for (const [pre, cnt] of prefixCount) {
+      if (cnt > best) {
+        best = cnt;
+        prefix = pre;
+      }
+    }
+    const used = new Set(this.projects.map((p) => p.code.toUpperCase()));
+    for (let n = 1; n <= 999; n++) {
+      const code = `${prefix}${String(n).padStart(3, '0')}`;
+      if (!used.has(code)) return code;
+    }
+    throw new Error(`工地代碼 ${prefix}001–${prefix}999 已用盡，請改用 /新增工地 代碼 名稱 自訂。`);
+  }
+
   /** 新增工地並寫回 seed 檔 */
   async add(project: Project): Promise<void> {
     this.projects.push(project);

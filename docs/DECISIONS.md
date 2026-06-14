@@ -2,6 +2,11 @@
 
 > 設計決策依日期排序。詳細演進脈絡見 docs/HANDOFF.md。
 
+## 2026-06-14：冷啟動判不出補救（批次歸檔）+ 新增工地極簡化 + request_location 群組限制
+- **5-B1 冷啟動批次歸檔**：判不出工地時不再每張送選單（冷啟動連傳會洗版、使用者不點 → 全留 _inbox）。改為 `PendingInboxStore` 累積同回報人連續判不出的紀錄、90 秒去抖只送一次選單；點一個工地把整批 _inbox 一次重歸（複用 `applyProjectReassign`）並寫 2 小時上下文播種，後續自動歸。假設「這批連續判不出＝同一工地」（冷啟動到現場連拍的大宗情形），不同工地可事後 ✏️ 改個別。**理由**：6/13 驗收結算發現 15 筆 _inbox 全是冷啟動「沒給依據」、零系統誤判，痛點在 UX 不在判斷邏輯（改判斷邏輯會誤歸）。**影響**：`PendingInboxStore`（新）、`siteFlow`（buildBatch/handleBatch）、`index.ts`（判不出分支 + `sb:` 回呼）、`smoke-inbox`（24）。
+- **5-B2 新增工地極簡化**：①代號自動編——`/新增工地 名稱` 免代號，`ProjectStore.nextAutoCode` 前綴自適應現有最常用前綴、001 起找第一個空號（不重用不跳號）；指定碼 `/新增工地 代碼 名稱 [座標]` 向後相容（以「第一字是英數短碼且後面還有名稱」判別）。②抓定位沿用「先傳一次定位」機制（不改）。**理由**：使用者要「不用想代號、不用記座標格式」。**影響**：`ProjectStore.nextAutoCode`（新）、`handleCommand`（雙模式）、`locationFlow`/`/help` 文案、`smoke-command`（13）。
+- **「一鍵分享定位」按鈕：查證後否決**：Telegram `request_location` 鍵盤按鈕**只在私聊有效、群組無效**（官方隱私限制）。bot 在工作群 → 做了無作用，故不做。群組架構下「抓定位」極限＝5-B2 的「手動傳一次、其餘全自動」。要一鍵須換架構（私聊／LINE／web 的 Geolocation），屬「使用規模定案後」的決定，不為單一按鈕現在換。**佐證**：已查 `core/` 無任何 Telegram SDK／API 依賴，換通道只需加一個 adapter 實作、核心不動（呼應 2026-06-05 adapter 介面決策）。
+
 ## 2026-06-09：repo 維持 public（個資/機密盤點通過）
 - **決策**：GitHub repo `construction-photo-archive` 維持 **public**，不改 private，`.gitignore` 不需調整。
 - **理由**：完整盤點確認 repo 內無任何真實個資/機密——無真實地址/門牌/電話/身分證；git **全歷史**未曾追蹤 `.env`/照片/`server/data/`/db、無殘留 token；唯一具體案名「信義豪宅案」為虛構測試範例。真實工地清單（座標/案名）只存桌機本機 `server/data/projects.seed.json`，被 `.gitignore` 擋死、永不進 git，他人 `clone` 亦取得不到（須自配 seed 或 `/新增工地`）。public 利於當作品集／他人 `clone`／`Use this template` 自行另行開發。

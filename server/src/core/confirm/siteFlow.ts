@@ -14,6 +14,7 @@ import type {
 import type { Db } from '../../db';
 import type { ProjectStore } from '../projects/ProjectStore';
 import type { UserContextStore } from '../resolve/UserContextStore';
+import type { PendingInboxStore } from '../projects/PendingInboxStore';
 import { reassignArchive, type ReassignPhoto } from '../records/archiver';
 import { logger } from '../../utils/logger';
 
@@ -198,6 +199,85 @@ export async function handleSitePick(
     工地: `${proj.code} ${proj.name}`,
     原工地: rec.projectCode ?? '（_inbox）',
     歸檔目錄: result.dir,
+    指定人: `${cb.fromName}（${cb.fromId}）`,
+  });
+}
+
+/** 批次選單按鈕：每個啟用工地一顆（callback 帶 reporterId，點一次歸整批）+ 暫不處理 */
+export function buildBatchSitePickerButtons(
+  projectStore: ProjectStore,
+  reporterId: string,
+): OutgoingButton[] {
+  const buttons: OutgoingButton[] = projectStore.listActive().map((p) => ({
+    text: `${p.code} ${p.name}`,
+    callbackData: `sb:${reporterId}:${p.code}`,
+  }));
+  buttons.push({
+    text: '↩️ 暫不處理（留待歸檔）',
+    callbackData: `sb:${reporterId}:${KEEP_INBOX}`,
+  });
+  return buttons;
+}
+
+/**
+ * 批次選定工地 sb:{reporterId}:{code}（冷啟動判不出補救）：
+ * 把該回報人累積的所有判不出紀錄一次歸到選定工地，並寫 2 小時上下文讓後續自動歸。
+ */
+export async function handleBatchSitePick(
+  adapter: MessageChannelAdapter,
+  db: Db,
+  projectStore: ProjectStore,
+  contextStore: UserContextStore,
+  pendingInbox: PendingInboxStore,
+  cb: IncomingCallback,
+  reporterId: string,
+  code: string,
+): Promise<void> {
+  // 暫不處理：清掉累積，紀錄留 _inbox（可後台歸檔）
+  if (code === KEEP_INBOX) {
+    pendingInbox.takeAll(reporterId);
+    await adapter.answerCallback(cb.callbackId, '暫不處理，留待歸檔');
+    await adapter.editMessageText(
+      cb.chatId,
+      cb.messageId,
+      '↩️ 這批先留待歸檔，可稍後在後台歸檔或重傳時補。',
+    );
+    return;
+  }
+
+  const proj = projectStore.findByCode(code);
+  if (!proj) {
+    await adapter.answerCallback(cb.callbackId, '找不到這個工地');
+    return;
+  }
+
+  const recordIds = pendingInbox.takeAll(reporterId);
+  if (recordIds.length === 0) {
+    await adapter.answerCallback(cb.callbackId, '這批已經處理過了');
+    return;
+  }
+
+  // 逐筆重歸檔到選定工地（複用 Telegram／後台共用的核心）
+  let ok = 0;
+  for (const recordId of recordIds) {
+    const r = await applyProjectReassign(db, recordId, proj, cb.fromId);
+    if (r) ok++;
+  }
+
+  // 寫回報人 2 小時上下文：這批之後傳的照片自動歸同工地，不再判不出（冷啟動播種）
+  contextStore.setIfNewer(reporterId, proj.code, Date.now());
+
+  await adapter.answerCallback(cb.callbackId, `已歸檔 ${ok} 張 ✅`);
+  await adapter.editMessageText(
+    cb.chatId,
+    cb.messageId,
+    `✅ 已把 ${ok} 張判不出的照片一起歸到 ${proj.code} ${proj.name}。\n` +
+      `接下來 2 小時這位回報人的照片會自動歸這裡，不用再選。`,
+  );
+  logger.info('批次歸檔判不出照片', {
+    工地: `${proj.code} ${proj.name}`,
+    歸檔筆數: ok,
+    回報人: reporterId,
     指定人: `${cb.fromName}（${cb.fromId}）`,
   });
 }

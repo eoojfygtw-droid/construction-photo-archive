@@ -66,7 +66,7 @@ export async function promptBareLocation(
   if (projectStore.listActive().length === 0) {
     await adapter.sendMessage(
       msg.chatId,
-      '📍 收到定位，但目前還沒有任何工地。\n請輸入：/新增工地 代碼 名稱\n（10 分鐘內會自動用這個定位當工地中心、開 GPS 自動歸檔）',
+      '📍 收到定位，但目前還沒有任何工地。\n請輸入：/新增工地 工地名稱（代號免填，我自動配）\n（10 分鐘內會自動用這個定位當工地中心、開 GPS 自動歸檔）',
     );
     return;
   }
@@ -159,7 +159,7 @@ export async function handleLocationCallback(
     await adapter.editMessageText(
       cb.chatId,
       cb.messageId,
-      '➕ 請直接輸入：/新增工地 代碼 名稱\n例：/新增工地 B001 ○○新建案\n（10 分鐘內會自動用你剛剛傳的定位當工地中心、開 GPS 自動歸檔）',
+      '➕ 請直接輸入：/新增工地 工地名稱（代號我自動配）\n例：/新增工地 ○○新建案\n（10 分鐘內會自動用你剛剛傳的定位當工地中心、開 GPS 自動歸檔）',
     );
     return;
   }
