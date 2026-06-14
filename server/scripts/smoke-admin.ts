@@ -1,5 +1,5 @@
 // ============================================================
-// smoke-admin.ts — 管理後台離線驗收（5-A1 唯讀瀏覽 + 5-A2 狀態/備註寫入）
+// smoke-admin.ts — 管理後台離線驗收（5-A1 唯讀瀏覽 + 5-A2 狀態/備註寫入 + 5-A5 報告頁）
 // 暫存 DB 塞 3 筆紀錄（A001 待改善 / A002 待確認 / _inbox）＋真實暫存媒體檔，
 // 起後台於隨機埠 → 用 fetch 驗列表、四篩選、詳細頁、媒體串流、404，
 // 再驗 POST 改狀態（status_logs、防重送）、POST 改備註（metadata.json/text.txt 同步）。
@@ -193,6 +193,32 @@ async function run() {
     // ---- 其他 404 ----
     const bad = await get('/etc/passwd');
     ok(bad.status === 404, '未知路徑回 404（無任意路徑讀取）');
+
+    // ---- 5-A5：報告頁（按工地分區 + 代表照片 + 列印友善）----
+    // 趁 DB 仍是原始 3 筆（A001 待改善 / A002 待確認 / _inbox）測；後面 POST 會改歸 _inbox。
+    const rptDefault = await get('/report');
+    ok(rptDefault.status === 200 && rptDefault.text.includes('🖨 列印'), '/report 預設回 200 且有列印按鈕');
+    ok(rptDefault.text.includes('value="7d" selected'), '報告預設期間為近 7 天');
+
+    const rpt = await get('/report?preset=custom&from=2026-06-05&to=2026-06-06');
+    ok(rpt.status === 200, '/report 自訂區間回 200');
+    ok(rpt.text.includes('共 <b>3</b> 筆'), '報告期間共 3 筆');
+    ok(rpt.text.includes('待改善 <b>1</b>'), '報告摘要待改善 1 筆');
+    ok(rpt.text.includes('煙測工地A') && rpt.text.includes('工地乙'), '報告含兩個工地分區');
+    ok(rpt.text.includes('_inbox 判不出（待歸檔）'), '報告含 _inbox 待歸檔分區');
+    ok(rpt.text.includes(`/media/${photoId1}`), '工地分區放代表照片縮圖');
+    ok(rpt.text.includes('rthumbs-empty'), '無可預覽照片的工地顯示佔位字');
+    ok(
+      rpt.text.indexOf('_inbox 判不出（待歸檔）') > rpt.text.indexOf('煙測工地A'),
+      '_inbox 分區排在工地之後',
+    );
+    ok(rpt.text.includes('window.print()'), '列印友善：有 window.print 觸發');
+
+    const rptEmpty = await get('/report?preset=custom&from=2026-01-01&to=2026-01-02');
+    ok(rptEmpty.text.includes('沒有任何紀錄'), '空區間顯示無紀錄');
+
+    const rptToday = await get('/report?preset=today');
+    ok(rptToday.status === 200 && rptToday.text.includes('value="today" selected'), '期間切今天可運作');
 
     // ---- 5-A2：POST 改狀態 ----
     const post = (path: string, body: Record<string, string>, headers: Record<string, string> = {}) =>

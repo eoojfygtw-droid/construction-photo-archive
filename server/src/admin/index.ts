@@ -4,6 +4,7 @@
 //   slice 5-A2：狀態修改＋備註編輯（後台第一個寫入功能）
 // 路由：
 //   GET  /dashboard            儀表板（工地/狀態/判定方式統計、最近 7 天趨勢、_inbox 警示）
+//   GET  /report               報告頁（5-A5：按工地分區、期間下拉、代表照片、列印友善；開會/報告用）
 //   GET  /records              紀錄列表（日期 / 工地 / 狀態 / 判定方式 四篩選）
 //   GET  /records/{id}         單筆詳細（照片預覽、錄音播放、EXIF、狀態歷程）
 //   GET  /media/{photoId}      照片/錄音串流（以 DB photo id 查路徑，不收使用者路徑 → 無路徑穿越）
@@ -265,6 +266,109 @@ function queryStats(dbPath: string): {
   }
 }
 
+/** 報告頁一個工地（或 _inbox）一塊 */
+interface ReportGroup {
+  code: string | null; // null = _inbox 判不出
+  name: string | null;
+  count: number;
+  byStatus: Map<string, number>;
+  lastReceivedAt: string;
+  thumbIds: number[]; // 代表照片的 photo id（可顯示影像、檔案存在；上限見 THUMB_CAP）
+}
+
+/** 報告頁資料：指定區間內，按工地聚合 */
+interface ReportData {
+  preset: string; // 期間下拉目前選的值（today/7d/14d/30d/custom）
+  from: string; // YYYY-MM-DD（含）
+  to: string; // YYYY-MM-DD（含）
+  total: number;
+  inbox: number;
+  byStatus: Map<string, number>;
+  groups: ReportGroup[]; // 工地依筆數多到少；_inbox 排最後
+}
+
+/** 每個工地最多挑幾張代表照片 */
+const THUMB_CAP = 6;
+
+/**
+ * 報告頁查詢：收件日落在 [from, to]（本機日期、含端點）的紀錄，按工地聚合。
+ * 代表照片只取「瀏覽器可顯示、且檔案存在」的影像，每工地上限 THUMB_CAP 張。
+ */
+function queryReport(dbPath: string, preset: string, from: string, to: string): ReportData {
+  const db = openRo(dbPath);
+  try {
+    const recs = db
+      .prepare(
+        `SELECT id, project_code, project_name, status, received_at FROM records`,
+      )
+      .all() as Record<string, unknown>[];
+
+    // 收件日換成本機日期再比對區間（與列表/儀表板同邏輯）
+    const inRange = recs.filter((r) => {
+      const d = localDateStr(r.received_at as string);
+      return d >= from && d <= to;
+    });
+    const recIds = new Set(inRange.map((r) => r.id as number));
+    // record id → 工地 key（code 或 '_inbox'），給縮圖歸組用
+    const recKey = new Map<number, string>(
+      inRange.map((r) => [r.id as number, (r.project_code as string | null) ?? '_inbox']),
+    );
+
+    const groupMap = new Map<string, ReportGroup>();
+    const byStatus = new Map<string, number>();
+    let inbox = 0;
+    for (const r of inRange) {
+      const code = (r.project_code as string | null) ?? null;
+      const key = code ?? '_inbox';
+      let g = groupMap.get(key);
+      if (!g) {
+        g = {
+          code,
+          name: (r.project_name as string | null) ?? null,
+          count: 0,
+          byStatus: new Map(),
+          lastReceivedAt: r.received_at as string,
+          thumbIds: [],
+        };
+        groupMap.set(key, g);
+      }
+      g.count++;
+      const st = r.status as string;
+      g.byStatus.set(st, (g.byStatus.get(st) ?? 0) + 1);
+      if ((r.received_at as string) > g.lastReceivedAt) g.lastReceivedAt = r.received_at as string;
+      if (!code) inbox++;
+      byStatus.set(st, (byStatus.get(st) ?? 0) + 1);
+    }
+
+    // 代表照片：只取區間內紀錄、可顯示影像、檔案存在，每組上限 THUMB_CAP
+    const photos = db
+      .prepare(`SELECT id, record_id, file_path, upload_type FROM photos ORDER BY id`)
+      .all() as Record<string, unknown>[];
+    for (const p of photos) {
+      const rid = p.record_id as number;
+      if (!recIds.has(rid)) continue;
+      const uploadType = (p.upload_type as string | null) ?? null;
+      if (uploadType === 'voice' || uploadType === 'audio') continue;
+      const filePath = p.file_path as string;
+      const ext = extname(filePath).toLowerCase();
+      if (!DISPLAYABLE.has(ext) || !existsSync(filePath)) continue;
+      const g = groupMap.get(recKey.get(rid) as string);
+      if (g && g.thumbIds.length < THUMB_CAP) g.thumbIds.push(p.id as number);
+    }
+
+    const groups = [...groupMap.values()].sort((a, b) => {
+      // _inbox 永遠排最後；其餘按筆數多到少
+      if (!a.code && b.code) return 1;
+      if (a.code && !b.code) return -1;
+      return b.count - a.count;
+    });
+
+    return { preset, from, to, total: inRange.length, inbox, byStatus, groups };
+  } finally {
+    db.close();
+  }
+}
+
 /** 下拉選單選項：紀錄中出現過的工地與狀態（去重） */
 function queryFilterOptions(dbPath: string): {
   projects: { code: string; name: string | null }[];
@@ -416,6 +520,29 @@ const CSS = `
   .note-form textarea { width: 100%; max-width: 560px; box-sizing: border-box; padding: 6px 8px; border: 1px solid #ccd2d9; border-radius: 6px; font: inherit; font-size: 13px; display: block; }
   .note-form button { margin-top: 6px; padding: 5px 14px; border: 0; border-radius: 6px; background: #2d6cdf; color: #fff; font-size: 13px; cursor: pointer; }
   footer { text-align: center; color: #aaa; font-size: 12px; padding: 20px; }
+  /* 報告頁 */
+  form.report-ctrl { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; }
+  form.report-ctrl label { display: flex; flex-direction: column; font-size: 12px; color: #555; gap: 4px; }
+  form.report-ctrl select, form.report-ctrl input { padding: 5px 8px; border: 1px solid #ccd2d9; border-radius: 6px; font-size: 13px; }
+  form.report-ctrl button { padding: 6px 16px; border: 0; border-radius: 6px; background: #2d6cdf; color: #fff; font-size: 13px; cursor: pointer; }
+  form.report-ctrl .print-btn { background: #41576f; }
+  .rpt-proj { background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; padding: 14px 18px; margin: 10px 0; break-inside: avoid; }
+  .rpt-proj.inbox { border-color: #e0a800; background: #fff8e1; }
+  .rpt-proj h3 { margin: 0 0 8px; font-size: 16px; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .rpt-proj h3 a { color: #1f2d3d; text-decoration: none; }
+  .rpt-proj h3 .cnt { font-size: 12px; color: #777; font-weight: normal; margin-left: auto; }
+  .rpt-status { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .rthumbs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .rthumb img { width: 120px; height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid #ddd; background: #000; display: block; }
+  .rthumbs-empty { font-size: 12px; color: #aaa; }
+  /* 列印 / 存 PDF：藏掉導覽與控制列，背景轉白，每個工地區塊不跨頁切斷 */
+  @media print {
+    header nav, form.report-ctrl, footer, .back { display: none !important; }
+    header { position: static; }
+    body { background: #fff; }
+    a { color: inherit !important; }
+    .rpt-proj { break-inside: avoid; border-color: #ccc; }
+  }
 `;
 
 /** 包整頁外框 */
@@ -429,7 +556,7 @@ function page(title: string, headerSum: string, body: string): string {
 <style>${CSS}</style>
 </head>
 <body>
-<header><h1><a href="/records">🗂 工地照片歸檔 — 管理後台</a><nav><a href="/dashboard">儀表板</a><a href="/records">紀錄列表</a></nav></h1><div class="sum">${headerSum}</div></header>
+<header><h1><a href="/records">🗂 工地照片歸檔 — 管理後台</a><nav><a href="/dashboard">儀表板</a><a href="/records">紀錄列表</a><a href="/report">報告</a></nav></h1><div class="sum">${headerSum}</div></header>
 <main>${body}</main>
 <footer>本機管理後台（5-A4）· 只綁 127.0.0.1 · 讀取唯讀，寫入僅限狀態／備註／指定工地</footer>
 </body>
@@ -552,6 +679,94 @@ function renderDashboard(stats: ReturnType<typeof queryStats>): string {
   <h2>各工地</h2><table class="kv">${projRows}</table>
   <h2>判定方式分布</h2><table class="kv">${methodRows}</table>`;
   return page('儀表板 — 管理後台', sum, body);
+}
+
+/** 期間下拉的預設值（值 → 中文 / 往前推幾天；custom 例外） */
+const REPORT_PRESETS: { value: string; label: string; days: number }[] = [
+  { value: 'today', label: '今天', days: 0 },
+  { value: '7d', label: '近 7 天', days: 6 },
+  { value: '14d', label: '近 14 天', days: 13 },
+  { value: '30d', label: '近 30 天', days: 29 },
+];
+
+/** 由 preset 與 from/to 算出實際區間（本機日期字串，含端點）；非 custom 以今天回推 */
+function resolveReportRange(
+  preset: string,
+  fromIn: string,
+  toIn: string,
+): { preset: string; from: string; to: string } {
+  const today = new Date();
+  const todayStr = localDateStr(today.toISOString());
+  const shift = (days: number) =>
+    localDateStr(new Date(today.getFullYear(), today.getMonth(), today.getDate() - days).toISOString());
+  const found = REPORT_PRESETS.find((p) => p.value === preset);
+  if (preset === 'custom') {
+    // 自訂：缺值時退回近 7 天
+    return { preset: 'custom', from: fromIn || shift(6), to: toIn || todayStr };
+  }
+  const days = found ? found.days : 6; // 預設近 7 天
+  return { preset: found ? preset : '7d', to: todayStr, from: shift(days) };
+}
+
+/** 報告頁（按工地分區 + 代表照片 + 列印友善）：開會 / 跟老闆報告用 */
+function renderReport(data: ReportData): string {
+  const fixCount = data.byStatus.get('待改善') ?? 0;
+  const sum = `<span>期間 <b>${esc(data.from)} ~ ${esc(data.to)}</b></span><span>共 <b>${data.total}</b> 筆</span><span class="${fixCount ? 'warn' : ''}">待改善 <b>${fixCount}</b></span><span class="${data.inbox ? 'warn' : ''}">_inbox <b>${data.inbox}</b>${data.inbox ? ' ⚠️' : ''}</span>`;
+
+  const presetOpts = [
+    ...REPORT_PRESETS.map(
+      (p) => `<option value="${p.value}"${data.preset === p.value ? ' selected' : ''}>${p.label}</option>`,
+    ),
+    `<option value="custom"${data.preset === 'custom' ? ' selected' : ''}>自訂區間</option>`,
+  ].join('');
+
+  // 期間切換 + 列印按鈕（列印時整條隱藏）；改日期會自動把 preset 切成「自訂」
+  const ctrl = `
+  <form class="report-ctrl noprint" method="get" action="/report">
+    <label>期間<select name="preset">${presetOpts}</select></label>
+    <label>起<input type="date" name="from" value="${esc(data.from)}" oninput="this.form.preset.value='custom'"></label>
+    <label>迄<input type="date" name="to" value="${esc(data.to)}" oninput="this.form.preset.value='custom'"></label>
+    <button type="submit">套用</button>
+    <button type="button" class="print-btn" onclick="window.print()">🖨 列印 / 存 PDF</button>
+  </form>`;
+
+  if (data.total === 0) {
+    return page('報告 — 管理後台', sum, ctrl + `<div class="empty-day">這段期間（${esc(data.from)} ~ ${esc(data.to)}）沒有任何紀錄。</div>`);
+  }
+
+  const sections = data.groups
+    .map((g) => {
+      const isInbox = !g.code;
+      const title = isInbox
+        ? '⚠️ _inbox 判不出（待歸檔）'
+        : `${esc(g.code)} ${esc(g.name ?? '')}`;
+      const href = isInbox ? '/records?project=_inbox' : `/records?project=${esc(g.code)}`;
+      // 狀態分布依固定順序排（待確認→待改善→已完成→已結案），其餘殿後
+      const statusBits = [...g.byStatus.entries()]
+        .sort((a, b) => {
+          const ia = ALLOWED_STATUSES.indexOf(a[0]);
+          const ib = ALLOWED_STATUSES.indexOf(b[0]);
+          return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+        })
+        .map(([st, n]) => `<span class="badge st ${statusClass(st)}">${esc(st)} ${n}</span>`)
+        .join('');
+      const thumbs = g.thumbIds.length
+        ? `<div class="rthumbs">${g.thumbIds
+            .map(
+              (id) =>
+                `<a class="rthumb" href="/media/${id}" target="_blank" rel="noopener"><img src="/media/${id}" loading="lazy" alt="代表照片"></a>`,
+            )
+            .join('')}</div>`
+        : '<div class="rthumbs-empty">（此區間無可預覽照片）</div>';
+      return `<section class="rpt-proj${isInbox ? ' inbox' : ''}">
+        <h3><a href="${href}">${title}</a><span class="cnt">${g.count} 筆 · 最後 ${esc(localDateTimeStr(g.lastReceivedAt))}</span></h3>
+        <div class="rpt-status">${statusBits}</div>
+        ${thumbs}
+      </section>`;
+    })
+    .join('');
+
+  return page('報告 — 管理後台', sum, ctrl + sections);
 }
 
 /** 詳細頁的單件媒體（照片 <img>、錄音 <audio>、其他佔位卡；來源一律走 /media/{id}） */
@@ -783,6 +998,17 @@ export function createAdminServer(opts?: { dbPath?: string; seedPath?: string })
       // 儀表板
       if (path === '/dashboard') {
         sendHtml(res, 200, renderDashboard(queryStats(dbPath)));
+        return;
+      }
+
+      // 報告頁（按工地分區 + 代表照片 + 列印友善）
+      if (path === '/report') {
+        const range = resolveReportRange(
+          url.searchParams.get('preset') ?? '7d',
+          url.searchParams.get('from') ?? '',
+          url.searchParams.get('to') ?? '',
+        );
+        sendHtml(res, 200, renderReport(queryReport(dbPath, range.preset, range.from, range.to)));
         return;
       }
 
