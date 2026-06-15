@@ -4,6 +4,12 @@
 > ✅ 2026-06-14 桌機開工：筆電 6/13 置頂的「後台疑似沒 push」警告已結案——後台確實擱在桌機沒推，本次 `git pull --rebase` 整合筆電 6/13 commit 後一起 push，後台正式上 GitHub，警告撤除。
 
 ## 當前進度
+**🟢 2026-06-15：後台 Claude Design 視覺改版 + LINE 雙通道串接 L1/L0**（4 個 commit 已 push：後台改版 `329e6d5`、docs `f757be7`、L1 `1222d3d`、L0 `5546a1f`）。
+- **後台四頁換皮**（`server/src/admin/index.ts`）：套 Claude Design 視覺（工程藍灰＋安全琥珀、Noto Sans TC + JetBrains Mono、設計 token 化 badge/卡片/kv/照片牆/lightbox、RWD＋列印）。純伺服器端 HTML＋內嵌 CSS、未引入框架、功能不動；typecheck＋全套 smoke 全綠（admin 78）。學長 demo（3300 + Cloudflare tunnel）已換新設計。設計簡報 `docs/DESIGN_BRIEF_admin.md`、改造前後圖在 `docs/admin-{before,after}/`（gitignored）。
+- **LINE 串接**：OA「工地照片歸檔」(@701kgjpe) + Messaging API 建好，憑證驗通（`scripts/preflight-line.ts`，`chatMode=bot`）。**L1**（`1222d3d`）多通道架構重構：`index.ts` 單 adapter→多 adapter 陣列（回覆/下載/回呼依來源通道路由、gating per-channel）、`env.ts` 加 LINE 設定 + `isLineConfigured()`。**L0**（`5546a1f`）`LineAdapter` webhook 收訊接通：起 server＋驗 X-Line-Signature＋message 正規化成 IncomingMessage；`scripts/line-probe.ts` 獨立驗證。**實機驗通**（LINE→Cloudflare tunnel→adapter，私訊＋群組都收到）。計畫全文見 `docs/PLAN_line_integration.md`。
+- **⚠️ 待辦/注意**：① `server/.env` 需加 `LINE_ALLOWED_GROUP_ID=C86dc0efab0918cc101db38396df10c53`（.env 由使用者維護、agent 不可寫）。② `trycloudflare` 臨時網址重開機/睡眠會變，要實機測再重跑 tunnel＋回貼 webhook URL。③ 狀態 store 的 `channel:` key 前綴暫緩（TG/LINE id 不衝突，純防禦）。④ 未重啟正式 bot（同 token 雙 poller 會互搶）。
+- **下一步 L2**（明天續做）：把 `LineAdapter` 掛進 `index.ts`；補 `downloadFile`（LINE `/v2/bot/message/{id}/content`）、同人短時間去抖合併（LINE 無相簿 id）、`getGroupMemberProfile` 取回報人名稱；讓 LINE 照片真的走歸檔。之後 L3（reply/push + Flex 按鈕 + 確認流程）、L4（對等補完）、L5（正式入口落腳 NAS/Cloudflare）。
+
 **🟢 2026-06-14（午後續場）：判不出編號修正 + 報告頁 5-A5**（後台功能、**不需 restart bot**）。①`c602c4f` 補回判不出暫存編號、`/新增工地` 無定位文案講明不會自動歸；釐清「自動歸觸發條件」（見 DECISIONS）。②**5-A5 報告頁**（`npm run admin` → http://127.0.0.1:3300/report）：按工地分區＋期間下拉（今天/7/14/30天/自訂）＋代表照片縮圖＋**列印友善**；縮圖點擊頁內 lightbox 放大、帶 24px 文字註解、**有錄音的照片在放大層按鈕播放**（錄音不單列在報告頁）。typecheck + 10 支 smoke 全綠（admin 58→78）。詳見 PROGRESS_LOG / DECISIONS（2026-06-14）。
 
 **🟢 2026-06-14：跨機整合 + 驗收結算 + 冷啟動補救 + 新增工地極簡化**（兩塊 bot 改動**待 restart**）。①把 6/11 擱在桌機的後台 4 片 `pull --rebase` 疊上筆電 6/13 後一起 push。②驗收 5 工作天跑滿（6/8–6/12），15 筆 _inbox 逐筆驗為**零系統誤判**、全是冷啟動沒給依據。③**5-B1 冷啟動批次歸檔**（判不出累積去抖、點一次工地整批歸 + 播種上下文；smoke-inbox 24）。④**5-B2 新增工地極簡化**（`/新增工地 名稱` 代號自動配、傳定位即自動設中心；smoke-command 13）。⑤查證 `request_location` 群組無效 → 一鍵定位按鈕**不做**（要換架構才行，等規模定案）。typecheck + 10 支 smoke 全綠。詳見 PROGRESS_LOG / DECISIONS（2026-06-14）。
