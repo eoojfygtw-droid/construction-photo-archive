@@ -174,7 +174,7 @@ async function run() {
     ok(detail.status === 200, `/records/${id1} 回 200`);
     ok(detail.text.includes('A001-20260605-001') && detail.text.includes('煙測工地A'), '詳細頁含編號與工地');
     ok(detail.text.includes(`/media/${photoId1}`), '照片走 /media/{id} 串流');
-    ok(detail.text.includes('thumb-audio'), '錄音以播放器顯示');
+    ok(detail.text.includes('<audio controls'), '錄音以播放器顯示');
     ok(detail.text.includes('HEIC 無法預覽') === false, 'A001 詳細頁無 HEIC 佔位卡（健全性）');
     ok(detail.text.includes('待確認') && detail.text.includes('待改善'), '狀態歷程含 待確認 → 待改善');
     const detail2 = await get(`/records/${id2}`);

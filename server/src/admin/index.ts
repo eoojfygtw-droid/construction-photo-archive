@@ -136,14 +136,6 @@ function esc(s: string | null | undefined): string {
     .replace(/"/g, '&quot;');
 }
 
-/** 狀態 badge 的 CSS class（與 report.ts 對齊） */
-function statusClass(status: string): string {
-  if (status === '待確認') return 'st-pending';
-  if (status === '待改善') return 'st-fix';
-  if (status === '已完成' || status === '已結案') return 'st-done';
-  return 'st-other';
-}
-
 // ------------------------------------------------------------
 // DB 查詢（每請求獨立 readOnly 連線，用完即關）
 // ------------------------------------------------------------
@@ -493,121 +485,340 @@ function queryMediaPath(dbPath: string, photoId: number): string | null {
 // HTML 視圖
 // ------------------------------------------------------------
 
-/** 共用 CSS（沿用 report.ts 視覺，加上表單/表格樣式） */
+/** 相機標誌 SVG（導覽列品牌，白線條相機）*/
+const MARK_SVG = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="1.5" y="4.5" width="15" height="11" rx="2" stroke="#fff" stroke-width="1.6"/><circle cx="9" cy="10" r="2.6" stroke="#fff" stroke-width="1.6"/><rect x="6" y="2.2" width="6" height="3" rx="1" fill="#fff"/></svg>`;
+
+/** 警示三角形 SVG（_inbox／待注意，可調大小與顏色）*/
+function warnSvg(size = 16, color = 'currentColor'): string {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-2px"><path d="M8 1.6 15 14H1L8 1.6Z" stroke="${color}" stroke-width="1.5" stroke-linejoin="round"/><rect x="7.3" y="6" width="1.4" height="4" rx=".7" fill="${color}"/><circle cx="8" cy="11.6" r=".85" fill="${color}"/></svg>`;
+}
+
+/** 狀態 → 設計 token 的 class key（與設計 styles.css 對齊）*/
+function statusKey(status: string): string {
+  if (status === '待確認') return 'pending';
+  if (status === '待改善') return 'fix';
+  if (status === '已完成') return 'done';
+  if (status === '已結案') return 'closed';
+  return 'closed';
+}
+
+/** 狀態 badge（小圓點＋文字＋可選計數）；沿用設計的 .badge .dot .n */
+function statusBadge(status: string, count?: number): string {
+  const n = count != null ? ` <span class="n">${count}</span>` : '';
+  return `<span class="badge st-${statusKey(status)}"><span class="dot"></span>${esc(status)}${n}</span>`;
+}
+
+/** 判定方式 badge（低調；判不出走琥珀 alarm）*/
+function methodBadge(method: string): string {
+  const label = RESOLVE_LABEL[method] ?? method;
+  const alarm = method === 'unresolved' ? ' alarm' : '';
+  return `<span class="mbadge${alarm}">${esc(label)}</span>`;
+}
+
+/** 工地標示：正常工地（代碼框＋名稱）或 _inbox 琥珀標 */
+function siteTag(code: string | null, name: string | null): string {
+  if (!code) return `<span class="inbox-tag">${warnSvg(13)} _inbox 判不出</span>`;
+  return `<span class="site-tag"><span class="code mono">${esc(code)}</span><span class="nm">${esc(name ?? '')}</span></span>`;
+}
+
+/** 共用 CSS（移植自 Claude Design：工程藍灰＋安全琥珀；設計 token + 四頁版面 + RWD + 列印）*/
 const CSS = `
-  :root { font-family: "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif; }
-  body { margin: 0; background: #f4f5f7; color: #222; }
-  header { background: #1f2d3d; color: #fff; padding: 14px 24px; position: sticky; top: 0; z-index: 5; }
-  header h1 { margin: 0 0 6px; font-size: 18px; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
-  header h1 a { color: #fff; text-decoration: none; }
-  header nav { display: inline-flex; gap: 12px; }
-  header nav a { font-size: 13px; font-weight: normal; color: #9fc1ff; }
-  .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
-  .card { background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; padding: 12px 18px; min-width: 110px; }
-  .card .num { font-size: 26px; font-weight: 700; }
-  .card .lbl { font-size: 12px; color: #666; }
-  .card.warn { border-color: #e0a800; background: #fff8e1; }
-  .bar { display: inline-block; height: 10px; background: #2d6cdf; border-radius: 3px; vertical-align: middle; }
-  table.kv td .muted { color: #999; font-size: 12px; }
-  .sum { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; }
-  .sum b { font-size: 16px; }
-  .sum .warn { color: #ffd24d; }
-  main { padding: 18px 24px 60px; max-width: 1100px; margin: 0 auto; }
-  form.filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; }
-  form.filters label { display: flex; flex-direction: column; font-size: 12px; color: #555; gap: 4px; }
-  form.filters input, form.filters select { padding: 5px 8px; border: 1px solid #ccd2d9; border-radius: 6px; font-size: 13px; min-width: 130px; }
-  form.filters button { padding: 6px 16px; border: 0; border-radius: 6px; background: #2d6cdf; color: #fff; font-size: 13px; cursor: pointer; }
-  form.filters a.clear { font-size: 12px; color: #777; align-self: center; }
-  .rec { background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; padding: 12px 16px; margin: 8px 0; display: block; text-decoration: none; color: inherit; }
-  .rec:hover { border-color: #2d6cdf; }
-  .rec-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .rno { font-weight: 700; font-family: ui-monospace, "Consolas", monospace; }
-  .proj { font-size: 13px; color: #2d6cdf; font-weight: 600; }
-  .proj.inbox { color: #b58900; }
-  .badge { font-size: 12px; padding: 2px 8px; border-radius: 10px; }
-  .rm { background: #eef2f7; color: #41576f; }
-  .st-pending { background: #fff3cd; color: #856404; }
-  .st-fix { background: #cfe2ff; color: #084298; }
-  .st-done { background: #d1e7dd; color: #0f5132; }
-  .st-other { background: #e2e3e5; color: #41464b; }
-  .cnt { font-size: 12px; color: #777; margin-left: auto; white-space: nowrap; }
-  .rec-meta { font-size: 13px; color: #555; margin-top: 4px; }
-  .note { font-size: 14px; background: #f8f9fa; border-radius: 6px; padding: 8px 10px; margin: 6px 0; white-space: pre-wrap; }
-  .note.empty, .empty { color: #aaa; }
-  .empty-day { text-align: center; color: #888; padding: 60px 0; font-size: 15px; }
-  table.kv { border-collapse: collapse; background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; width: 100%; font-size: 14px; }
-  table.kv th, table.kv td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
-  table.kv th { width: 130px; color: #666; font-weight: 600; white-space: nowrap; }
-  .thumbs { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
-  .thumb { margin: 0; width: 180px; }
-  .thumb img { width: 180px; height: 180px; object-fit: cover; border-radius: 6px; border: 1px solid #ddd; background: #000; }
-  .thumb figcaption { font-size: 11px; color: #666; word-break: break-all; margin-top: 4px; }
-  .thumb .up { color: #2d6cdf; }
-  .thumb-placeholder .ph { width: 180px; height: 180px; border-radius: 6px; border: 1px dashed #bbb; background: #fafafa; display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px; text-align: center; padding: 4px; box-sizing: border-box; }
-  .thumb-audio { width: 270px; }
-  .thumb-audio audio { width: 270px; height: 40px; }
-  h2 { font-size: 16px; border-left: 4px solid #2d6cdf; padding-left: 10px; margin-top: 26px; }
-  .back { font-size: 13px; }
-  .inline-actions { display: inline-flex; gap: 6px; margin-left: 10px; flex-wrap: wrap; }
-  .inline-actions button { padding: 3px 10px; font-size: 12px; border: 1px solid #ccd2d9; border-radius: 6px; background: #fff; cursor: pointer; }
-  .inline-actions select { padding: 3px 6px; font-size: 12px; border: 1px solid #ccd2d9; border-radius: 6px; }
-  .inline-actions button:hover { border-color: #2d6cdf; color: #2d6cdf; }
-  .note-form textarea { width: 100%; max-width: 560px; box-sizing: border-box; padding: 6px 8px; border: 1px solid #ccd2d9; border-radius: 6px; font: inherit; font-size: 13px; display: block; }
-  .note-form button { margin-top: 6px; padding: 5px 14px; border: 0; border-radius: 6px; background: #2d6cdf; color: #fff; font-size: 13px; cursor: pointer; }
-  footer { text-align: center; color: #aaa; font-size: 12px; padding: 20px; }
+  :root {
+    --ink:#1b2733; --ink-2:#46566a; --ink-3:#6c7c8f;
+    --line:#d6dde4; --line-2:#e8ecf1;
+    --bg:#eceff3; --surface:#fff; --surface-2:#f5f7f9;
+    --navy:#2a3c4f; --navy-2:#213140; --navy-line:#3b4f63;
+    --accent:#e0851b; --accent-deep:#b5640a; --accent-ink:#8a4e02; --accent-soft:#fbeed3; --accent-line:#f0d39a;
+    --st-pending-bg:#fcefce; --st-pending-ink:#8a5b07; --st-pending-dot:#d49413;
+    --st-fix-bg:#e2ecf8; --st-fix-ink:#1d5aa6; --st-fix-dot:#2f76cf;
+    --st-done-bg:#e0f0e6; --st-done-ink:#1d7a48; --st-done-dot:#2a9d62;
+    --st-closed-bg:#e8ecef; --st-closed-ink:#58697a; --st-closed-dot:#8a9aaa;
+    --sans:'Noto Sans TC','PingFang TC','Microsoft JhengHei',system-ui,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,'SFMono-Regular',monospace;
+    --r-card:8px; --r-sm:6px; --r-badge:5px;
+    --shadow-card:0 1px 2px rgba(20,35,50,.05);
+    --shadow-hov:0 6px 18px rgba(20,35,50,.12);
+    --shadow-pop:0 12px 40px rgba(15,25,38,.30);
+    --wrap:1100px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:16px; line-height:1.55; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  .mono { font-family:var(--mono); font-feature-settings:"tnum" 1; }
+  a { color:var(--st-fix-ink); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  button { font-family:inherit; }
+
+  /* 導覽列 + 摘要列 */
+  .topbar { background:var(--navy); background-image:linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px); background-size:40px 40px,40px 40px; color:#eaf0f5; border-bottom:3px solid var(--accent); position:sticky; top:0; z-index:50; }
+  .topbar-inner { max-width:var(--wrap); margin:0 auto; padding:14px 24px; display:flex; align-items:center; gap:28px; flex-wrap:wrap; }
+  .brand { display:flex; align-items:center; gap:11px; font-size:19px; font-weight:700; letter-spacing:.01em; color:#fff; }
+  .brand:hover { text-decoration:none; }
+  .brand .mark { width:30px; height:30px; flex:0 0 auto; border-radius:6px; background:var(--accent); display:grid; place-items:center; }
+  .brand .mark svg { display:block; }
+  .brand .sub { color:#9fb3c4; font-weight:500; font-size:16px; }
+  .tabs { display:flex; gap:4px; margin-left:auto; }
+  .tab { appearance:none; background:transparent; border:1px solid transparent; color:#b6c6d4; font-size:16px; font-weight:600; padding:7px 16px; border-radius:var(--r-sm); cursor:pointer; white-space:nowrap; transition:background .12s,color .12s; }
+  .tab:hover { background:rgba(255,255,255,.07); color:#fff; text-decoration:none; }
+  .tab.active { background:rgba(255,255,255,.12); color:#fff; }
+  .summary-bar { background:var(--navy-2); border-top:1px solid var(--navy-line); }
+  .summary-inner { max-width:var(--wrap); margin:0 auto; padding:9px 24px; display:flex; align-items:center; gap:22px; flex-wrap:wrap; font-size:14.5px; color:#9db0c0; }
+  .summary-inner b, .summary-inner .sv { color:#eef3f7; font-weight:700; }
+  .summary-inner .warn { color:var(--accent); font-weight:700; }
+  .summary-inner a { color:#9fc1ff; }
+  .summary-sep { width:1px; height:15px; background:var(--navy-line); display:inline-block; }
+
+  /* 版面容器 */
+  .wrap { max-width:var(--wrap); margin:0 auto; padding:28px 24px 64px; }
+  .section-head { display:flex; align-items:baseline; gap:12px; margin:34px 0 14px; }
+  .section-head:first-child { margin-top:0; }
+  .section-head h2 { font-size:19px; font-weight:700; margin:0; letter-spacing:.01em; padding-left:12px; border-left:4px solid var(--navy); line-height:1.2; }
+  .section-head .meta { color:var(--ink-3); font-size:14px; margin-left:auto; }
+  .page-title-row { display:flex; align-items:center; gap:14px; margin-bottom:6px; }
+  .back-link { display:inline-flex; align-items:center; gap:6px; font-size:15px; font-weight:600; color:var(--ink-2); }
+  .back-link:hover { color:var(--navy); text-decoration:none; }
+
+  /* 卡片 */
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--r-card); box-shadow:var(--shadow-card); }
+  .card-pad { padding:18px 20px; }
+
+  /* 狀態 badge */
+  .badge { display:inline-flex; align-items:center; gap:6px; font-size:13.5px; font-weight:700; line-height:1; padding:5px 10px 5px 9px; border-radius:var(--r-badge); white-space:nowrap; border:1px solid transparent; }
+  .badge .dot { width:7px; height:7px; border-radius:50%; flex:0 0 auto; }
+  .badge .n { font-family:var(--mono); font-weight:700; }
+  .st-pending { background:var(--st-pending-bg); color:var(--st-pending-ink); border-color:#f2e2b6; }
+  .st-pending .dot { background:var(--st-pending-dot); }
+  .st-fix { background:var(--st-fix-bg); color:var(--st-fix-ink); border-color:#cadcf1; }
+  .st-fix .dot { background:var(--st-fix-dot); }
+  .st-done { background:var(--st-done-bg); color:var(--st-done-ink); border-color:#c4e3d0; }
+  .st-done .dot { background:var(--st-done-dot); }
+  .st-closed { background:var(--st-closed-bg); color:var(--st-closed-ink); border-color:#d6dde3; }
+  .st-closed .dot { background:var(--st-closed-dot); }
+
+  /* 判定方式 badge */
+  .mbadge { display:inline-flex; align-items:center; font-size:12.5px; font-weight:600; padding:4px 9px; border-radius:var(--r-badge); background:var(--surface-2); color:var(--ink-3); border:1px solid var(--line-2); white-space:nowrap; }
+  .mbadge.alarm { background:var(--accent-soft); color:var(--accent-ink); border-color:var(--accent-line); font-weight:700; }
+
+  /* 工地標示 */
+  .site-tag { display:inline-flex; align-items:baseline; gap:7px; white-space:nowrap; }
+  .site-tag .code { font-family:var(--mono); font-weight:700; font-size:13.5px; color:var(--ink); background:var(--surface-2); border:1px solid var(--line-2); border-radius:4px; padding:2px 6px; letter-spacing:.02em; }
+  .site-tag .nm { font-weight:600; color:var(--ink); }
+  .site-tag.inbox .code, .inbox-tag { color:var(--accent-ink); background:var(--accent-soft); border:1px solid var(--accent-line); font-weight:700; }
+  .inbox-tag { display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:13.5px; border-radius:5px; padding:3px 9px; white-space:nowrap; }
+
+  /* 按鈕 */
+  .btn { appearance:none; font-size:14.5px; font-weight:600; padding:8px 15px; border-radius:var(--r-sm); border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer; transition:background .12s,border-color .12s,box-shadow .12s; white-space:nowrap; }
+  .btn:hover { background:var(--surface-2); border-color:#c2cbd4; }
+  .btn-primary { background:var(--navy); border-color:var(--navy); color:#fff; }
+  .btn-primary:hover { background:#233646; border-color:#233646; }
+  .btn-accent { background:var(--accent); border-color:var(--accent-deep); color:#fff; }
+  .btn-accent:hover { background:var(--accent-deep); }
+  .btn-sm { font-size:13.5px; padding:6px 11px; }
+  .btn:disabled { opacity:.5; cursor:default; }
+
+  /* 表單控制 */
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field > label { font-size:13px; font-weight:700; color:var(--ink-2); }
+  .input, select.input, textarea.input { font-family:inherit; font-size:15px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--r-sm); padding:8px 11px; line-height:1.4; }
+  select.input { cursor:pointer; min-width:130px; }
+  .input:focus, textarea.input:focus, select.input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(224,133,27,.15); }
+  textarea.input { resize:vertical; min-height:80px; width:100%; }
+
+  /* 警示橫幅 / 空狀態 */
+  .alert-banner { display:flex; align-items:center; gap:12px; background:var(--accent-soft); border:1px solid var(--accent-line); border-left:5px solid var(--accent); border-radius:var(--r-card); padding:14px 18px; color:var(--accent-ink); font-size:15.5px; font-weight:600; }
+  .alert-banner .ico { flex:0 0 auto; font-size:18px; line-height:0; }
+  .alert-banner a { color:var(--accent-deep); font-weight:700; text-decoration:underline; text-underline-offset:2px; }
+  .alert-banner .num { font-family:var(--mono); font-weight:800; }
+  .empty-state { text-align:center; color:var(--ink-3); padding:54px 20px; font-size:16px; }
+  .empty-state .big { font-size:17px; font-weight:600; color:var(--ink-2); margin-bottom:4px; }
+
+  /* 縮圖 / 佔位卡 / 錄音標 */
+  .thumb-sq { position:relative; aspect-ratio:1/1; }
+  .thumb-sq img { width:100%; height:100%; object-fit:cover; border-radius:6px; border:1px solid var(--line); background:#1c2731; display:block; }
+  .thumb-sq.zoom { cursor:zoom-in; }
+  .placeholder-card { aspect-ratio:1/1; border:1px dashed var(--line); border-radius:var(--r-sm); background:repeating-linear-gradient(135deg,#eef1f4 0 9px,#e7ebf0 9px 18px); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; text-align:center; padding:12px; color:var(--ink-3); }
+  .placeholder-card .pc-ico { font-size:22px; opacity:.8; }
+  .placeholder-card .pc-t { font-size:12.5px; font-weight:700; color:var(--ink-2); }
+  .placeholder-card .pc-n { font-size:11px; font-family:var(--mono); word-break:break-all; max-width:100%; }
+  .audio-pip { position:absolute; right:6px; bottom:6px; width:26px; height:26px; border-radius:50%; background:rgba(20,30,40,.82); color:#fff; display:grid; place-items:center; font-size:13px; box-shadow:0 1px 4px rgba(0,0,0,.4); z-index:3; pointer-events:none; }
+
+  /* 儀表板：統計卡片 */
+  .stat-row { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px; }
+  .stat-card { display:block; background:var(--surface); border:1px solid var(--line); border-radius:var(--r-card); box-shadow:var(--shadow-card); padding:18px 18px 16px; cursor:pointer; color:inherit; transition:box-shadow .14s,border-color .14s,transform .14s; }
+  .stat-card:hover { box-shadow:var(--shadow-hov); transform:translateY(-1px); text-decoration:none; }
+  .stat-card .num { font-family:var(--mono); font-size:40px; font-weight:700; line-height:1; letter-spacing:-.01em; color:var(--ink); }
+  .stat-card .lbl { margin-top:10px; display:flex; align-items:center; gap:8px; font-size:14.5px; color:var(--ink-2); font-weight:600; white-space:nowrap; }
+  .stat-card.alarm { background:var(--accent-soft); border-color:var(--accent-line); }
+  .stat-card.alarm .num { color:var(--accent-deep); }
+  .stat-card.alarm .lbl { color:var(--accent-ink); }
+  .stat-card .lbl .badge { padding:3px 8px; font-size:12px; }
+
+  .bars { display:flex; flex-direction:column; }
+  .bar-row { display:grid; grid-template-columns:120px 1fr auto; align-items:center; gap:14px; padding:11px 18px; border-bottom:1px solid var(--line-2); }
+  .bar-row:last-child { border-bottom:0; }
+  .bar-row .d { font-family:var(--mono); font-size:14px; color:var(--ink-2); }
+  .bar-track { height:22px; display:flex; align-items:center; gap:10px; }
+  .bar-fill { height:22px; border-radius:4px; background:linear-gradient(90deg,#3a5167,#2f76cf); min-width:4px; }
+  .bar-row.today .bar-fill { background:linear-gradient(90deg,#c46e0f,var(--accent)); }
+  .bar-row .cnt { font-size:14.5px; color:var(--ink); white-space:nowrap; }
+  .bar-row .cnt b { font-family:var(--mono); font-weight:700; }
+  .bar-row .view { font-size:14px; }
+
+  .list-row { display:grid; grid-template-columns:92px 1fr auto; align-items:center; gap:16px; padding:13px 18px; border-bottom:1px solid var(--line-2); }
+  .list-row:last-child { border-bottom:0; }
+  .list-row .code { font-family:var(--mono); font-weight:700; font-size:14px; color:var(--ink-2); }
+  .list-row .nm { font-weight:600; }
+  .list-row .right { display:flex; align-items:center; gap:14px; color:var(--ink-3); font-size:14px; white-space:nowrap; }
+  .list-row .right .num { font-family:var(--mono); color:var(--ink); font-weight:700; }
+  .list-row.inbox { background:var(--accent-soft); }
+
+  /* 紀錄列表 */
+  .filter-bar { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; padding:16px 18px; margin-bottom:18px; }
+  .filter-bar .actions { display:flex; align-items:center; gap:12px; margin-left:auto; }
+  .filter-bar .clear-link { font-size:14px; color:var(--ink-3); }
+  .rec-list { display:flex; flex-direction:column; gap:12px; }
+  .rec-card { display:block; background:var(--surface); border:1px solid var(--line); border-radius:var(--r-card); box-shadow:var(--shadow-card); padding:15px 18px; cursor:pointer; color:inherit; transition:box-shadow .14s,border-color .14s,transform .14s; }
+  .rec-card:hover { box-shadow:var(--shadow-hov); border-color:#c2cbd4; transform:translateY(-1px); text-decoration:none; }
+  .rec-card.inbox { border-left:4px solid var(--accent); }
+  .rec-line1 { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .rec-line1 .rid { font-family:var(--mono); font-weight:700; font-size:15.5px; color:var(--ink); letter-spacing:.01em; }
+  .rec-line1 .spacer { flex:1; }
+  .rec-line1 .when { color:var(--ink-3); font-size:13.5px; white-space:nowrap; }
+  .rec-line1 .when .ct { font-family:var(--mono); color:var(--ink-2); font-weight:700; }
+  .rec-line2 { margin-top:8px; color:var(--ink-2); font-size:14px; display:flex; gap:8px; align-items:center; }
+  .rec-line2 .reporter { font-weight:600; }
+  .rec-note { margin-top:10px; background:var(--surface-2); border:1px solid var(--line-2); border-radius:var(--r-sm); padding:9px 12px; font-size:14px; color:var(--ink-2); white-space:pre-wrap; line-height:1.5; }
+
+  /* 單筆詳細 */
+  .kv { background:var(--surface); border:1px solid var(--line); border-radius:var(--r-card); box-shadow:var(--shadow-card); overflow:hidden; }
+  .kv-row { display:grid; grid-template-columns:140px 1fr; border-bottom:1px solid var(--line-2); }
+  .kv-row:last-child { border-bottom:0; }
+  .kv-row > .k { background:var(--surface-2); padding:14px 16px; font-size:14px; font-weight:700; color:var(--ink-2); border-right:1px solid var(--line-2); }
+  .kv-row > .v { padding:13px 16px; font-size:15px; display:flex; flex-direction:column; gap:9px; }
+  .kv-row > .v .v-main { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .kv-row .rid-big { font-family:var(--mono); font-weight:700; font-size:17px; letter-spacing:.01em; }
+  .kv-row .muted { color:var(--ink-3); }
+  .inline-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .inline-actions .lead { font-size:13px; color:var(--ink-3); margin-right:2px; }
+  .help-text { font-size:13px; color:var(--ink-3); }
+  .media-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:16px; }
+  .media-item .thumb-sq, .media-item .placeholder-card { margin-bottom:8px; }
+  .media-cap { font-size:12.5px; color:var(--ink-3); line-height:1.5; }
+  .media-cap .fn { font-family:var(--mono); color:var(--ink-2); word-break:break-all; display:block; }
+  .mk-badge { display:inline-block; margin-top:3px; font-size:11.5px; font-weight:700; color:var(--ink-2); background:var(--surface-2); border:1px solid var(--line-2); border-radius:4px; padding:2px 7px; white-space:nowrap; }
+  .media-item audio { width:100%; margin-bottom:6px; }
+  .tl-row { display:grid; grid-template-columns:120px 1fr auto; align-items:center; gap:16px; padding:13px 18px; border-bottom:1px solid var(--line-2); font-size:14.5px; }
+  .tl-row:last-child { border-bottom:0; }
+  .tl-row .tl-when { font-family:var(--mono); font-size:13.5px; color:var(--ink-3); }
+  .tl-row .tl-change { color:var(--ink-2); }
+  .tl-row .tl-change b { color:var(--ink); }
+  .tl-row .tl-by { color:var(--ink-3); font-size:13.5px; white-space:nowrap; }
+  .tl-row .tl-by .who { font-family:var(--mono); color:var(--ink-2); }
+
   /* 報告頁 */
-  form.report-ctrl { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; }
-  form.report-ctrl label { display: flex; flex-direction: column; font-size: 12px; color: #555; gap: 4px; }
-  form.report-ctrl select, form.report-ctrl input { padding: 5px 8px; border: 1px solid #ccd2d9; border-radius: 6px; font-size: 13px; }
-  form.report-ctrl button { padding: 6px 16px; border: 0; border-radius: 6px; background: #2d6cdf; color: #fff; font-size: 13px; cursor: pointer; }
-  form.report-ctrl .print-btn { background: #41576f; }
-  .rpt-proj { background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; padding: 14px 18px; margin: 10px 0; break-inside: avoid; }
-  .rpt-proj.inbox { border-color: #e0a800; background: #fff8e1; }
-  .rpt-proj h3 { margin: 0 0 8px; font-size: 16px; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-  .rpt-proj h3 a { color: #1f2d3d; text-decoration: none; }
-  .rpt-proj h3 .cnt { font-size: 12px; color: #777; font-weight: normal; margin-left: auto; }
-  .rpt-status { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-  .rthumbs { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
-  .rthumb { position: relative; padding: 0; border: 0; background: none; cursor: zoom-in; line-height: 0; }
-  .rthumb img { width: 120px; height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid #ddd; background: #000; display: block; }
-  .rthumb:hover img { border-color: #2d6cdf; }
-  .thumb-mic { position: absolute; right: 4px; bottom: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,.62); color: #fff; font-size: 12px; line-height: 22px; text-align: center; }
-  .rthumbs-empty { font-size: 12px; color: #aaa; }
-  /* 頁內放大層（lightbox） */
-  .lb { display: none; position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.82); align-items: center; justify-content: center; padding: 28px; box-sizing: border-box; }
-  .lb.show { display: flex; }
-  .lb-box { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 14px; max-width: 94vw; max-height: 94vh; }
-  .lb-box img { max-width: 94vw; max-height: 78vh; object-fit: contain; border-radius: 6px; background: #000; }
-  #lb-audio { width: min(82vw, 520px); }
-  #lb-cap { color: #fff; font-size: 24px; line-height: 1.6; font-weight: 500; max-width: 82vw; text-align: center; white-space: pre-wrap; word-break: break-word; }
-  .lb-actions { display: flex; gap: 10px; }
-  .lb-btn { padding: 7px 18px; border: 1px solid #ffffff66; border-radius: 6px; background: transparent; color: #fff; font-size: 14px; cursor: pointer; }
-  .lb-btn:hover { background: #ffffff22; }
-  #lb-play { border-color: #7fc4ff; color: #cfe6ff; }
-  /* 列印 / 存 PDF：藏掉導覽與控制列，背景轉白，每個工地區塊不跨頁切斷 */
+  .report-control { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; padding:16px 18px; margin-bottom:22px; }
+  .report-control .actions { margin-left:auto; display:flex; gap:10px; }
+  .report-section { margin-bottom:22px; break-inside:avoid; }
+  .rs-head { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; padding-bottom:12px; margin-bottom:14px; border-bottom:2px solid var(--navy); }
+  .rs-head .rs-title { font-size:20px; font-weight:700; display:flex; align-items:baseline; gap:9px; }
+  .rs-head .rs-title .code { font-family:var(--mono); color:var(--navy); }
+  .rs-head .rs-meta { margin-left:auto; color:var(--ink-3); font-size:14px; white-space:nowrap; }
+  .rs-head .rs-meta .num { font-family:var(--mono); color:var(--ink); font-weight:700; }
+  .report-section.inbox .rs-head { border-bottom-color:var(--accent); }
+  .rs-badges { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  .photo-wall { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:12px; }
+  .photo-wall .rthumb { position:relative; padding:0; border:0; background:none; cursor:zoom-in; line-height:0; }
+  .photo-wall .rthumb img { width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:6px; border:1px solid var(--line); background:#1c2731; display:block; }
+  .photo-wall .rthumb:hover img { border-color:var(--accent); }
+  .photo-wall .no-photo, .rthumbs-empty { color:var(--ink-3); font-size:14px; padding:8px 2px; }
+  .thumb-mic { position:absolute; right:6px; bottom:6px; width:24px; height:24px; border-radius:50%; background:rgba(20,30,40,.82); color:#fff; display:grid; place-items:center; font-size:12px; box-shadow:0 1px 4px rgba(0,0,0,.4); }
+
+  /* lightbox（頁內放大層）*/
+  .lb { display:none; position:fixed; inset:0; z-index:200; background:rgba(15,22,30,.82); align-items:center; justify-content:center; padding:32px; }
+  .lb.show { display:flex; }
+  .lb-box { position:relative; width:min(840px,100%); margin:0; display:flex; flex-direction:column; gap:16px; }
+  .lb-box img { width:100%; max-height:min(62vh,560px); object-fit:contain; border-radius:var(--r-card); background:#11181f; }
+  #lb-cap { display:flex; flex-direction:column; gap:6px; color:#fff; font-size:24px; line-height:1.4; }
+  #lb-cap .lb-id { font-size:18px; color:#ffd89b; font-weight:700; font-family:var(--mono); }
+  #lb-audio { width:100%; max-width:420px; }
+  .lb-actions { display:flex; gap:10px; }
+  .lb-btn { padding:7px 18px; border:1px solid #ffffff66; border-radius:var(--r-sm); background:transparent; color:#fff; font-size:14px; cursor:pointer; }
+  .lb-btn:hover { background:#ffffff22; }
+  #lb-play { border-color:#7fc4ff; color:#cfe6ff; }
+  .lb-close { position:absolute; top:-14px; right:-8px; width:40px; height:40px; border-radius:50%; background:rgba(255,255,255,.12); color:#fff; border:0; font-size:18px; cursor:pointer; z-index:2; }
+  .lb-close:hover { background:rgba(255,255,255,.24); }
+
+  footer { text-align:center; color:var(--ink-3); font-size:12.5px; padding:24px; }
+
+  /* RWD（手機單欄）*/
+  @media (max-width:720px) {
+    html, body { font-size:15.5px; }
+    .topbar-inner { gap:12px 18px; padding:12px 16px; }
+    .brand { font-size:17px; }
+    .brand .sub { display:none; }
+    .tabs { margin-left:0; width:100%; }
+    .tab { flex:1; text-align:center; padding:9px 6px; }
+    .summary-inner { padding:8px 16px; gap:12px; font-size:13px; }
+    .wrap { padding:18px 16px 56px; }
+    .stat-row { grid-template-columns:repeat(2,1fr); gap:10px; }
+    .stat-card .num { font-size:32px; }
+    .bar-row { grid-template-columns:86px 1fr; row-gap:4px; padding:10px 14px; }
+    .bar-row .view, .bar-row .cnt { grid-column:2; justify-self:start; }
+    .bar-track { grid-column:1 / -1; }
+    .list-row { grid-template-columns:1fr auto; gap:8px; padding:12px 14px; }
+    .filter-bar { flex-direction:column; align-items:stretch; }
+    .filter-bar .field, .filter-bar select.input, .filter-bar .input { width:100%; }
+    .filter-bar .actions { margin-left:0; justify-content:space-between; }
+    .rec-line1 .when { width:100%; order:5; }
+    .kv-row { grid-template-columns:1fr; }
+    .kv-row > .k { border-right:0; border-bottom:1px solid var(--line-2); padding:10px 14px; }
+    .tl-row { grid-template-columns:1fr; gap:4px; padding:12px 14px; }
+    .report-control { flex-direction:column; align-items:stretch; }
+    .report-control .field, .report-control .input { width:100%; }
+    .report-control .actions { margin-left:0; }
+    .photo-wall { grid-template-columns:repeat(auto-fill,minmax(108px,1fr)); gap:8px; }
+    .lb { padding:16px; }
+    #lb-cap { font-size:20px; }
+  }
+
+  /* 列印（報告頁存 PDF）*/
   @media print {
-    header nav, form.report-ctrl, footer, .back, #lb { display: none !important; }
-    header { position: static; }
-    body { background: #fff; }
-    a { color: inherit !important; }
-    .rpt-proj { break-inside: avoid; border-color: #ccc; }
+    :root { --bg:#fff; }
+    html, body { background:#fff; font-size:12pt; }
+    .topbar, .summary-bar, .report-control, .lb, .back-link, .print-hide { display:none !important; }
+    .wrap { max-width:100%; padding:0; }
+    .card, .kv, .rec-card, .stat-card { box-shadow:none; }
+    .report-section { break-inside:avoid; page-break-inside:avoid; margin-bottom:16pt; }
+    .rs-head { border-bottom:1.5pt solid var(--navy); }
+    .photo-wall { grid-template-columns:repeat(4,1fr); gap:8pt; }
+    a { color:var(--ink) !important; text-decoration:none; }
   }
 `;
 
-/** 包整頁外框 */
-function page(title: string, headerSum: string, body: string): string {
+/** 包整頁外框（導覽列＋摘要列）；activeTab ∈ dashboard/records/report（''＝不高亮）*/
+function page(title: string, activeTab: string, summaryHtml: string, body: string): string {
+  const tab = (key: string, label: string, href: string) =>
+    `<a class="tab${activeTab === key ? ' active' : ''}" href="${href}">${label}</a>`;
   return `<!doctype html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>${CSS}</style>
 </head>
 <body>
-<header><h1><a href="/records">🗂 工地照片歸檔 — 管理後台</a><nav><a href="/dashboard">儀表板</a><a href="/records">紀錄列表</a><a href="/report">報告</a></nav></h1><div class="sum">${headerSum}</div></header>
-<main>${body}</main>
-<footer>本機管理後台（5-A4）· 只綁 127.0.0.1 · 讀取唯讀，寫入僅限狀態／備註／指定工地</footer>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/dashboard"><span class="mark">${MARK_SVG}</span>工地照片歸檔 <span class="sub">— 管理後台</span></a>
+    <nav class="tabs">${tab('dashboard', '儀表板', '/dashboard')}${tab('records', '紀錄列表', '/records')}${tab('report', '報告', '/report')}</nav>
+  </div>
+  ${summaryHtml ? `<div class="summary-bar"><div class="summary-inner">${summaryHtml}</div></div>` : ''}
+</header>
+<main class="wrap">${body}</main>
+<footer>本機管理後台 · 只綁 127.0.0.1 · 讀取唯讀，寫入僅限狀態／備註／指定工地</footer>
 </body>
 </html>`;
 }
@@ -621,113 +832,124 @@ function renderList(
   const archived = rows.filter((r) => r.projectCode).length;
   const inbox = rows.length - archived;
   const pending = rows.filter((r) => r.status === '待確認').length;
-  const sum = `<span>符合 <b>${rows.length}</b> 筆</span><span>已歸檔 <b>${archived}</b></span><span class="${inbox ? 'warn' : ''}">_inbox <b>${inbox}</b>${inbox ? ' ⚠️' : ''}</span><span>待確認 <b>${pending}</b></span>`;
+  const sep = '<span class="summary-sep"></span>';
+  const sum = `<span>符合 <b>${rows.length}</b> 筆</span>${sep}<span>已歸檔 <b>${archived}</b></span>${sep}<span class="${inbox ? 'warn' : ''}">_inbox <b>${inbox}</b>${inbox ? ' ⚠' : ''}</span>${sep}<span>待確認 <b>${pending}</b></span>`;
 
   const projOpts = [
-    `<option value="">（全部工地）</option>`,
-    `<option value="_inbox"${f.project === '_inbox' ? ' selected' : ''}>⚠️ _inbox 判不出</option>`,
+    `<option value="">全部工地</option>`,
+    `<option value="_inbox"${f.project === '_inbox' ? ' selected' : ''}>⚠ _inbox 判不出</option>`,
     ...options.projects.map(
       (p) =>
         `<option value="${esc(p.code)}"${f.project === p.code ? ' selected' : ''}>${esc(p.code)} ${esc(p.name ?? '')}</option>`,
     ),
   ].join('');
   const statusOpts = [
-    `<option value="">（全部狀態）</option>`,
+    `<option value="">全部狀態</option>`,
     ...options.statuses.map(
       (s) => `<option value="${esc(s)}"${f.status === s ? ' selected' : ''}>${esc(s)}</option>`,
     ),
   ].join('');
   const methodOpts = [
-    `<option value="">（全部方式）</option>`,
+    `<option value="">全部判定方式</option>`,
     ...Object.entries(RESOLVE_LABEL).map(
       ([k, label]) => `<option value="${k}"${f.method === k ? ' selected' : ''}>${label}</option>`,
     ),
   ].join('');
 
   const filterForm = `
-  <form class="filters" method="get" action="/records">
-    <label>日期（收件日）<input type="date" name="date" value="${esc(f.date)}"></label>
-    <label>工地<select name="project">${projOpts}</select></label>
-    <label>狀態<select name="status">${statusOpts}</select></label>
-    <label>判定方式<select name="method">${methodOpts}</select></label>
-    <button type="submit">篩選</button>
-    <a class="clear" href="/records">清除條件</a>
+  <form class="card filter-bar" method="get" action="/records">
+    <div class="field"><label>收件日</label><input class="input" type="date" name="date" value="${esc(f.date)}"></div>
+    <div class="field"><label>工地</label><select class="input" name="project">${projOpts}</select></div>
+    <div class="field"><label>狀態</label><select class="input" name="status">${statusOpts}</select></div>
+    <div class="field"><label>判定方式</label><select class="input" name="method">${methodOpts}</select></div>
+    <div class="actions">
+      <button class="btn btn-primary" type="submit">篩選</button>
+      <a class="clear-link" href="/records">清除條件</a>
+    </div>
   </form>`;
 
   const cards = rows
     .map((r) => {
-      const proj = r.projectCode
-        ? `<span class="proj">${esc(r.projectCode)} ${esc(r.projectName ?? '')}</span>`
-        : `<span class="proj inbox">⚠️ _inbox 判不出</span>`;
-      const note = r.textNote
-        ? `<div class="note">${esc(r.textNote)}</div>`
-        : '';
+      const note = r.textNote ? `<div class="rec-note">${esc(r.textNote)}</div>` : '';
       return `
-      <a class="rec" href="/records/${r.id}">
-        <div class="rec-head">
-          <span class="rno">${esc(r.recordNo)}</span>
-          ${proj}
-          <span class="badge st ${statusClass(r.status)}">${esc(r.status)}</span>
-          <span class="badge rm">${esc(RESOLVE_LABEL[r.resolveMethod] ?? r.resolveMethod)}</span>
-          <span class="cnt">${r.photoCount} 件 · ${localDateTimeStr(r.receivedAt)}</span>
+      <a class="rec-card${r.projectCode ? '' : ' inbox'}" href="/records/${r.id}">
+        <div class="rec-line1">
+          <span class="rid">${esc(r.recordNo)}</span>
+          ${siteTag(r.projectCode, r.projectName)}
+          ${statusBadge(r.status)}
+          ${methodBadge(r.resolveMethod)}
+          <span class="spacer"></span>
+          <span class="when"><span class="ct">${r.photoCount}</span> 件 · ${localDateTimeStr(r.receivedAt)}</span>
         </div>
-        <div class="rec-meta">${esc(r.reporterName ?? '（未具名）')}</div>
+        <div class="rec-line2"><span class="reporter">${esc(r.reporterName ?? '（未具名）')}</span></div>
         ${note}
       </a>`;
     })
     .join('');
 
-  const empty = rows.length === 0 ? `<div class="empty-day">沒有符合條件的紀錄。</div>` : '';
-  return page('紀錄列表 — 管理後台', sum, filterForm + cards + empty);
+  const list = rows.length
+    ? `<div class="rec-list">${cards}</div>`
+    : `<div class="card empty-state"><div class="big">沒有符合條件的紀錄。</div><div>試著放寬篩選條件，或 <a href="/records">清除條件</a>。</div></div>`;
+  return page('紀錄列表 — 管理後台', 'records', sum, filterForm + list);
 }
 
 /** 儀表板頁 */
 function renderDashboard(stats: ReturnType<typeof queryStats>): string {
-  const sum = `<span>全部 <b>${stats.total}</b> 筆</span><span class="${stats.inbox ? 'warn' : ''}">_inbox <b>${stats.inbox}</b>${stats.inbox ? ' ⚠️' : ''}</span>`;
+  const sum = `<span>全部 <b>${stats.total}</b> 筆</span><span class="summary-sep"></span><span class="${stats.inbox ? 'warn' : ''}">_inbox <b>${stats.inbox}</b>${stats.inbox ? ' ⚠' : ''}</span>`;
+  const today = localDateStr(new Date().toISOString());
 
-  const statusCards = [...stats.byStatus.entries()]
-    .map(([st, n]) => `<div class="card"><div class="num">${n}</div><div class="lbl"><span class="badge st ${statusClass(st)}">${esc(st)}</span></div></div>`)
-    .join('');
-  const cards = `<div class="cards">
-    <div class="card"><div class="num">${stats.total}</div><div class="lbl">全部紀錄</div></div>
-    <div class="card${stats.inbox ? ' warn' : ''}"><div class="num">${stats.inbox}</div><div class="lbl">⚠️ _inbox 待歸檔</div></div>
-    ${statusCards}
+  // 總覽兩張卡（全部 / _inbox）
+  const topCards = `<div class="stat-row" style="grid-template-columns:1fr 1fr;margin-bottom:14px">
+    <a class="stat-card" href="/records"><div class="num">${stats.total}</div><div class="lbl">全部紀錄</div></a>
+    <a class="stat-card${stats.inbox ? ' alarm' : ''}" href="/records?project=_inbox"><div class="num">${stats.inbox}</div><div class="lbl">${warnSvg(15)} _inbox 待歸檔</div></a>
   </div>`;
 
+  // 各狀態卡（固定四種順序，0 也顯示，方便一眼掃）
+  const statusCards = `<div class="stat-row">${ALLOWED_STATUSES.map(
+    (st) =>
+      `<a class="stat-card" href="/records?status=${encodeURIComponent(st)}"><div class="num">${stats.byStatus.get(st) ?? 0}</div><div class="lbl">${statusBadge(st)}</div></a>`,
+  ).join('')}</div>`;
+
+  const inboxAlert = stats.inbox
+    ? `<div class="alert-banner" style="margin-top:8px"><span class="ico">${warnSvg(18, 'var(--accent-deep)')}</span><span>有 <span class="num">${stats.inbox}</span> 筆判不出工地，<a href="/records?project=_inbox">前往人工歸檔 →</a></span></div>`
+    : '';
+
+  // 最近 7 天長條
   const maxDay = Math.max(1, ...stats.byDay.map((d) => d.count));
   const dayRows = stats.byDay
     .map(
       (d) =>
-        `<tr><th>${esc(d.date)}</th><td><span class="bar" style="width:${Math.round((d.count / maxDay) * 240)}px"></span> ${d.count} 筆 <a class="muted" href="/records?date=${esc(d.date)}">查看</a></td></tr>`,
+        `<div class="bar-row${d.date === today ? ' today' : ''}"><span class="d">${esc(d.date)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.max(6, Math.round((d.count / maxDay) * 100))}%"></div></div><span class="cnt"><b>${d.count}</b> 筆 <a class="view" href="/records?date=${esc(d.date)}">查看</a></span></div>`,
     )
     .join('');
 
+  // 各工地
   const projRows = stats.byProject.length
     ? stats.byProject
         .map(
           (p) =>
-            `<tr><th>${esc(p.code)}</th><td><a href="/records?project=${esc(p.code)}">${esc(p.name ?? '')}</a>　${p.count} 筆 <span class="muted">最後收件 ${esc(localDateTimeStr(p.lastReceivedAt))}</span></td></tr>`,
+            `<div class="list-row"><span class="code">${esc(p.code)}</span><a class="nm" href="/records?project=${esc(p.code)}">${esc(p.name ?? '')}</a><span class="right"><span><span class="num">${p.count}</span> 筆</span><span>最後收件 ${esc(localDateTimeStr(p.lastReceivedAt))}</span></span></div>`,
         )
         .join('')
-    : '<tr><td class="empty">（尚無已歸檔紀錄）</td></tr>';
+    : '<div class="list-row"><span class="muted">（尚無已歸檔紀錄）</span></div>';
 
+  // 判定方式分布
   const methodRows = [...stats.byMethod.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(
       ([m, n]) =>
-        `<tr><th>${esc(RESOLVE_LABEL[m] ?? m)}</th><td>${n} 筆 <a class="muted" href="/records?method=${esc(m)}">查看</a></td></tr>`,
+        `<div class="list-row" style="grid-template-columns:1fr auto"><span>${methodBadge(m)}</span><span class="right"><span><span class="num">${n}</span> 筆</span><a class="view" href="/records?method=${esc(m)}">查看</a></span></div>`,
     )
     .join('');
 
-  const inboxAlert = stats.inbox
-    ? `<p class="note">⚠️ 有 <b>${stats.inbox}</b> 筆判不出工地，<a href="/records?project=_inbox">前往人工歸檔</a>。</p>`
-    : '';
-
-  const body = `${cards}${inboxAlert}
-  <h2>最近 7 天收件</h2><table class="kv">${dayRows}</table>
-  <h2>各工地</h2><table class="kv">${projRows}</table>
-  <h2>判定方式分布</h2><table class="kv">${methodRows}</table>`;
-  return page('儀表板 — 管理後台', sum, body);
+  const body = `${topCards}${statusCards}${inboxAlert}
+  <div class="section-head"><h2>最近 7 天收件</h2></div>
+  <div class="card"><div class="bars">${dayRows}</div></div>
+  <div class="section-head"><h2>各工地</h2></div>
+  <div class="card">${projRows}</div>
+  <div class="section-head"><h2>判定方式分布</h2></div>
+  <div class="card">${methodRows}</div>`;
+  return page('儀表板 — 管理後台', 'dashboard', sum, body);
 }
 
 /** 期間下拉的預設值（值 → 中文 / 往前推幾天；custom 例外） */
@@ -760,7 +982,8 @@ function resolveReportRange(
 /** 報告頁（按工地分區 + 代表照片 + 列印友善）：開會 / 跟老闆報告用 */
 function renderReport(data: ReportData): string {
   const fixCount = data.byStatus.get('待改善') ?? 0;
-  const sum = `<span>期間 <b>${esc(data.from)} ~ ${esc(data.to)}</b></span><span>共 <b>${data.total}</b> 筆</span><span class="${fixCount ? 'warn' : ''}">待改善 <b>${fixCount}</b></span><span class="${data.inbox ? 'warn' : ''}">_inbox <b>${data.inbox}</b>${data.inbox ? ' ⚠️' : ''}</span>`;
+  const sep = '<span class="summary-sep"></span>';
+  const sum = `<span>期間 <b class="mono">${esc(data.from)} ~ ${esc(data.to)}</b></span>${sep}<span>共 <b>${data.total}</b> 筆</span>${sep}<span class="${fixCount ? 'warn' : ''}">待改善 <b>${fixCount}</b></span>${sep}<span class="${data.inbox ? 'warn' : ''}">_inbox <b>${data.inbox}</b>${data.inbox ? ' ⚠' : ''}</span>`;
 
   const presetOpts = [
     ...REPORT_PRESETS.map(
@@ -771,25 +994,27 @@ function renderReport(data: ReportData): string {
 
   // 期間切換 + 列印按鈕（列印時整條隱藏）；改日期會自動把 preset 切成「自訂」
   const ctrl = `
-  <form class="report-ctrl noprint" method="get" action="/report">
-    <label>期間<select name="preset">${presetOpts}</select></label>
-    <label>起<input type="date" name="from" value="${esc(data.from)}" oninput="this.form.preset.value='custom'"></label>
-    <label>迄<input type="date" name="to" value="${esc(data.to)}" oninput="this.form.preset.value='custom'"></label>
-    <button type="submit">套用</button>
-    <button type="button" class="print-btn" onclick="window.print()">🖨 列印 / 存 PDF</button>
+  <form class="card report-control print-hide" method="get" action="/report">
+    <div class="field"><label>期間</label><select class="input" name="preset">${presetOpts}</select></div>
+    <div class="field"><label>起</label><input class="input" type="date" name="from" value="${esc(data.from)}" oninput="this.form.preset.value='custom'"></div>
+    <div class="field"><label>迄</label><input class="input" type="date" name="to" value="${esc(data.to)}" oninput="this.form.preset.value='custom'"></div>
+    <div class="actions">
+      <button class="btn btn-primary" type="submit">套用</button>
+      <button class="btn" type="button" onclick="window.print()">🖨 列印 / 存 PDF</button>
+    </div>
   </form>`;
 
   if (data.total === 0) {
-    return page('報告 — 管理後台', sum, ctrl + `<div class="empty-day">這段期間（${esc(data.from)} ~ ${esc(data.to)}）沒有任何紀錄。</div>`);
+    return page('報告 — 管理後台', 'report', sum, ctrl + `<div class="card empty-state"><div class="big">這段期間（${esc(data.from)} ~ ${esc(data.to)}）沒有任何紀錄。</div></div>`);
   }
 
   const sections = data.groups
     .map((g) => {
       const isInbox = !g.code;
-      const title = isInbox
-        ? '⚠️ _inbox 判不出（待歸檔）'
-        : `${esc(g.code)} ${esc(g.name ?? '')}`;
       const href = isInbox ? '/records?project=_inbox' : `/records?project=${esc(g.code)}`;
+      const titleInner = isInbox
+        ? `<span class="inbox-tag" style="font-size:16px">${warnSvg(15)} _inbox 判不出（待歸檔）</span>`
+        : `<span class="code">${esc(g.code)}</span><span>${esc(g.name ?? '')}</span>`;
       // 狀態分布依固定順序排（待確認→待改善→已完成→已結案），其餘殿後
       const statusBits = [...g.byStatus.entries()]
         .sort((a, b) => {
@@ -797,7 +1022,7 @@ function renderReport(data: ReportData): string {
           const ib = ALLOWED_STATUSES.indexOf(b[0]);
           return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
         })
-        .map(([st, n]) => `<span class="badge st ${statusClass(st)}">${esc(st)} ${n}</span>`)
+        .map(([st, n]) => statusBadge(st, n))
         .join('');
       // 縮圖只放照片；點擊開放大層。該筆若有錄音，縮圖右下角標 🎤、並帶 data-audio
       // 供放大層的「錄音」鈕播放（錄音本身不出現在報告頁）。
@@ -809,11 +1034,11 @@ function renderReport(data: ReportData): string {
         })
         .join('');
       const media = g.media.length
-        ? `<div class="rthumbs">${mediaHtml}</div>`
+        ? `<div class="photo-wall">${mediaHtml}</div>`
         : '<div class="rthumbs-empty">（此區間無可預覽照片）</div>';
-      return `<section class="rpt-proj${isInbox ? ' inbox' : ''}">
-        <h3><a href="${href}">${title}</a><span class="cnt">${g.count} 筆 · 最後 ${esc(localDateTimeStr(g.lastReceivedAt))}</span></h3>
-        <div class="rpt-status">${statusBits}</div>
+      return `<section class="report-section${isInbox ? ' inbox' : ''}">
+        <div class="rs-head"><a class="rs-title" href="${href}">${titleInner}</a><span class="rs-meta"><span class="num">${g.count}</span> 筆 · 最後 ${esc(localDateTimeStr(g.lastReceivedAt))}</span></div>
+        <div class="rs-badges">${statusBits}</div>
         ${media}
       </section>`;
     })
@@ -864,32 +1089,32 @@ function renderReport(data: ReportData): string {
     document.addEventListener('keydown',function(e){if(e.key==='Escape')closeLb();});
   </script>`;
 
-  return page('報告 — 管理後台', sum, ctrl + sections + lightbox);
+  return page('報告 — 管理後台', 'report', sum, ctrl + sections + lightbox);
 }
 
 /** 詳細頁的單件媒體（照片 <img>、錄音 <audio>、其他佔位卡；來源一律走 /media/{id}） */
 function mediaCell(m: MediaRow): string {
   const ext = extname(m.filePath).toLowerCase();
   const fileName = m.filePath.split(/[\\/]/).pop() ?? m.filePath;
-  const badge =
-    m.uploadType === 'voice' || m.uploadType === 'audio'
-      ? '🎤 錄音'
-      : m.uploadType === 'document'
-        ? '📄 文件'
-        : '🖼 照片';
+  const isAudio = m.uploadType === 'voice' || m.uploadType === 'audio';
+  const kindBadge = isAudio ? '🎤 錄音' : m.uploadType === 'document' ? '📄 文件' : '🖼 照片';
   const exifInfo = m.hasExif
-    ? ` · EXIF ${m.exifTakenAt ? esc(localDateTimeStr(m.exifTakenAt)) : ''}${m.exifGpsLat != null ? ' 📍' : ''}`
+    ? ` · ${m.exifTakenAt ? esc(localDateTimeStr(m.exifTakenAt)) : 'EXIF'}${m.exifGpsLat != null ? ' 📍' : ''}`
     : '';
-  const caption = `<figcaption>${esc(fileName)}<br><span class="up">${badge}</span>${exifInfo}</figcaption>`;
+  const cap = `<div class="media-cap"><span class="fn">${esc(fileName)}</span> <span class="mk-badge">${kindBadge}</span>${exifInfo}</div>`;
   const exists = existsSync(m.filePath);
-  if (exists && (m.uploadType === 'voice' || m.uploadType === 'audio') && PLAYABLE_AUDIO.has(ext)) {
-    return `<figure class="thumb thumb-audio"><audio controls preload="none" src="/media/${m.id}"></audio>${caption}</figure>`;
+  let visual: string;
+  if (exists && isAudio && PLAYABLE_AUDIO.has(ext)) {
+    visual = `<audio controls preload="none" src="/media/${m.id}"></audio>`;
+  } else if (exists && DISPLAYABLE.has(ext)) {
+    visual = `<div class="thumb-sq"><img src="/media/${m.id}" alt="${esc(fileName)}" loading="lazy"></div>`;
+  } else {
+    const isHeic = ext === '.heic' || ext === '.heif';
+    const t = !exists ? '⚠️ 檔案不存在' : isHeic ? 'HEIC 無法預覽' : `${ext.replace('.', '').toUpperCase()} 無法預覽`;
+    const ico = isAudio ? '🎤' : m.uploadType === 'document' ? '📄' : '🖼';
+    visual = `<div class="placeholder-card"><div class="pc-ico">${ico}</div><div class="pc-t">${esc(t)}</div></div>`;
   }
-  if (exists && DISPLAYABLE.has(ext)) {
-    return `<figure class="thumb"><img src="/media/${m.id}" alt="${esc(fileName)}" loading="lazy">${caption}</figure>`;
-  }
-  const note = exists ? ext.replace('.', '').toUpperCase() + ' 無法預覽' : '⚠️ 檔案不存在';
-  return `<figure class="thumb thumb-placeholder"><div class="ph">${esc(note)}</div>${caption}</figure>`;
+  return `<div class="media-item">${visual}${cap}</div>`;
 }
 
 /** 詳細頁 */
@@ -903,56 +1128,58 @@ function renderDetail(
   const recordNo = record.record_no as string;
   const status = record.status as string;
   const projectCode = (record.project_code as string | null) ?? null;
-  const proj = projectCode
-    ? `${esc(projectCode)} ${esc((record.project_name as string | null) ?? '')}`
-    : '⚠️ _inbox 判不出';
+  const projectName = (record.project_name as string | null) ?? null;
   const method = record.resolve_method as string;
-  const gps =
-    record.gps_lat != null ? `${record.gps_lat}, ${record.gps_lng}` : '（無）';
-  const sum = `<span class="back"><a href="javascript:history.back()" style="color:#9fc1ff">← 回列表</a></span>`;
+  const gps = record.gps_lat != null ? `${record.gps_lat}, ${record.gps_lng}` : null;
+  const sep = '<span class="summary-sep"></span>';
+  const sum = `<span>紀錄 <b class="mono">${esc(recordNo)}</b></span>${sep}<span>狀態 ${statusBadge(status)}</span>`;
 
-  const kv = `
-  <table class="kv">
-    <tr><th>紀錄編號</th><td><b>${esc(recordNo)}</b></td></tr>
-    <tr><th>工地</th><td>${proj}${
-      activeProjects.length
-        ? `<form class="inline-actions" method="post" action="/records/${id}/project" onsubmit="return confirm('確定要把這筆紀錄重歸檔到選定的工地？照片會搬到新工地資料夾。')"><select name="code">${activeProjects
-            .map(
-              (p) =>
-                `<option value="${esc(p.code)}"${p.code === projectCode ? ' selected' : ''}>${esc(p.code)} ${esc(p.name)}</option>`,
-            )
-            .join('')}</select><button type="submit">${projectCode ? '改工地' : '指定工地（人工歸檔）'}</button></form>`
-        : ''
-    }</td></tr>
-    <tr><th>狀態</th><td><span class="badge st ${statusClass(status)}">${esc(status)}</span><form class="inline-actions" method="post" action="/records/${id}/status">${ALLOWED_STATUSES.filter((s) => s !== status)
-      .map((s) => `<button type="submit" name="to" value="${esc(s)}">改為 ${esc(s)}</button>`)
-      .join('')}</form></td></tr>
-    <tr><th>判定方式</th><td>${esc(RESOLVE_LABEL[method] ?? method)}</td></tr>
-    <tr><th>回報人</th><td>${esc((record.reporter_name as string | null) ?? '（未具名）')}</td></tr>
-    <tr><th>收件時間</th><td>${esc(localDateTimeStr(record.received_at as string))}（歸檔日期依據）</td></tr>
-    <tr><th>拍攝時間</th><td>${record.taken_at ? esc(localDateTimeStr(record.taken_at as string)) : '（無 EXIF）'}</td></tr>
-    <tr><th>GPS</th><td>${esc(gps)}</td></tr>
-    <tr><th>文字備註</th><td><form class="note-form" method="post" action="/records/${id}/note"><textarea name="note" rows="3" placeholder="（無備註）">${esc((record.text_note as string | null) ?? '')}</textarea><button type="submit">儲存備註</button></form>儲存會同步重寫歸檔目錄的 metadata.json / text.txt</td></tr>
-    <tr><th>來源</th><td>${esc(record.channel as string)}${record.media_group_id ? '（相簿合併）' : ''}</td></tr>
-  </table>`;
+  // 工地列就地操作（改工地 / _inbox 人工歸檔）
+  const siteAction = activeProjects.length
+    ? `<div class="inline-actions"><span class="lead">${projectCode ? '改工地：' : '指定工地（人工歸檔）：'}</span><form class="inline-actions" method="post" action="/records/${id}/project" onsubmit="return confirm('確定要把這筆紀錄重歸檔到選定的工地？照片會搬到新工地資料夾。')"><select class="input" name="code" style="padding:6px 10px;font-size:14px">${activeProjects
+        .map(
+          (p) =>
+            `<option value="${esc(p.code)}"${p.code === projectCode ? ' selected' : ''}>${esc(p.code)} ${esc(p.name)}</option>`,
+        )
+        .join('')}</select><button class="btn btn-sm btn-primary" type="submit">${projectCode ? '改工地' : '指定工地'}</button></form></div>`
+    : '';
+
+  const statusAction = `<div class="inline-actions"><span class="lead">改為：</span><form class="inline-actions" method="post" action="/records/${id}/status">${ALLOWED_STATUSES.filter((s) => s !== status)
+    .map((s) => `<button class="btn btn-sm" type="submit" name="to" value="${esc(s)}">${esc(s)}</button>`)
+    .join('')}</form></div>`;
+
+  const kvRow = (k: string, v: string) => `<div class="kv-row"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  const kv = `<div class="kv">
+    ${kvRow('紀錄編號', `<div class="v-main"><span class="rid-big">${esc(recordNo)}</span></div>`)}
+    ${kvRow('工地', `<div class="v-main">${siteTag(projectCode, projectName)}</div>${siteAction}`)}
+    ${kvRow('狀態', `<div class="v-main">${statusBadge(status)}</div>${statusAction}`)}
+    ${kvRow('判定方式', `<div class="v-main">${methodBadge(method)}</div>`)}
+    ${kvRow('回報人', `<div class="v-main">${esc((record.reporter_name as string | null) ?? '（未具名）')}</div>`)}
+    ${kvRow('收件時間', `<div class="v-main">${esc(localDateTimeStr(record.received_at as string))} <span class="muted">（歸檔日期依據）</span></div>`)}
+    ${kvRow('拍攝時間', `<div class="v-main">${record.taken_at ? esc(localDateTimeStr(record.taken_at as string)) : '<span class="muted">（無 EXIF）</span>'}</div>`)}
+    ${kvRow('GPS', `<div class="v-main">${gps ? `<span class="mono">${esc(gps)}</span>` : '<span class="muted">（無）</span>'}</div>`)}
+    ${kvRow('文字備註', `<form method="post" action="/records/${id}/note"><textarea class="input" name="note" rows="3" placeholder="（無備註）">${esc((record.text_note as string | null) ?? '')}</textarea><div class="inline-actions" style="margin-top:8px"><button class="btn btn-sm btn-accent" type="submit">儲存備註</button></div></form><div class="help-text">儲存會同步重寫歸檔目錄的 metadata.json / text.txt。</div>`)}
+    ${kvRow('來源', `<div class="v-main">${esc(record.channel as string)}${record.media_group_id ? '（相簿合併）' : ''}</div>`)}
+  </div>`;
 
   const thumbs = media.length
-    ? `<div class="thumbs">${media.map(mediaCell).join('')}</div>`
-    : '<p class="empty">（無媒體檔案）</p>';
+    ? `<div class="card card-pad"><div class="media-grid">${media.map(mediaCell).join('')}</div></div>`
+    : '<div class="card empty-state">（無媒體檔案）</div>';
 
   const logRows = logs.length
     ? logs
         .map(
           (l) =>
-            `<tr><th>${esc(localDateTimeStr(l.changedAt))}</th><td>${esc(l.fromStatus ?? '（建檔）')} → <b>${esc(l.toStatus)}</b>${l.changedBy ? `　由 ${esc(l.changedBy)}` : ''}</td></tr>`,
+            `<div class="tl-row"><span class="tl-when">${esc(localDateTimeStr(l.changedAt))}</span><span class="tl-change">${esc(l.fromStatus ?? '（建檔）')} → <b>${esc(l.toStatus)}</b></span><span class="tl-by">${l.changedBy ? `由 <span class="who">${esc(l.changedBy)}</span>` : ''}</span></div>`,
         )
         .join('')
-    : '<tr><td class="empty">（尚無狀態異動）</td></tr>';
+    : '<div class="tl-row"><span class="muted">（尚無狀態異動）</span></div>';
 
-  const body = `${kv}
-  <h2>媒體（${media.length} 件）</h2>${thumbs}
-  <h2>狀態歷程</h2><table class="kv">${logRows}</table>`;
-  return page(`${recordNo} — 管理後台`, sum, body);
+  const body = `<div class="page-title-row"><a class="back-link" href="/records">← 回列表</a></div>
+  ${kv}
+  <div class="section-head"><h2>媒體（${media.length} 件）</h2></div>${thumbs}
+  <div class="section-head"><h2>狀態歷程</h2></div><div class="card timeline">${logRows}</div>`;
+  return page(`${recordNo} — 管理後台`, 'records', sum, body);
 }
 
 // ------------------------------------------------------------
