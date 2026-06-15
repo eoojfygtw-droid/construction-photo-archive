@@ -8,7 +8,7 @@ import { loadConfig } from './config/env';
 import { logger } from './utils/logger';
 import { TelegramAdapter } from './channels/telegram/TelegramAdapter';
 import type { MessageChannelAdapter } from './channels/MessageChannelAdapter';
-import type { IncomingMessage } from './channels/types';
+import type { ChannelName, IncomingCallback, IncomingMessage } from './channels/types';
 import { intakePhotos, type IntakeResult } from './core/media/photoIntake';
 import { MediaGroupAggregator } from './core/ingest/MediaGroupAggregator';
 import { ProjectStore } from './core/projects/ProjectStore';
@@ -85,11 +85,24 @@ async function main(): Promise<void> {
   const appendStore = new AppendStore(); // 追加合併：拆單反悔用
   const pendingInbox = new PendingInboxStore(); // 冷啟動：累積判不出照片、批次歸檔
 
-  // 目前綁 Telegram；未來換 LINE 只要換成另一個 adapter 實作，以下程式碼不動
-  const adapter: MessageChannelAdapter = new TelegramAdapter(config);
+  // 多通道：核心對每個 adapter 註冊同一組 handler；回覆／下載檔案時用「訊息來源通道」
+  // 對應的 adapter。目前掛 Telegram；LINE 於 L2 接上 LineAdapter 後 push 進這個陣列即可，
+  // 以下核心邏輯不動。
+  const adapters: MessageChannelAdapter[] = [new TelegramAdapter(config)];
+  const adaptersByChannel = new Map<ChannelName, MessageChannelAdapter>(
+    adapters.map((a) => [a.channel, a]),
+  );
+  // 各通道的「工作群」chat id（核心只把工作群的訊息拿去歸檔；其餘來源僅回應查詢/指令）
+  const workChatByChannel: Partial<Record<ChannelName, string>> = {
+    telegram: config.telegramAllowedChatId,
+    line: config.lineAllowedGroupId,
+  };
 
   // 一筆紀錄就緒後的處理：指令優先 → 下載照片+EXIF → 工地判斷
   const onRecordReady = async (msg: IncomingMessage) => {
+    // 回覆／下載一律走訊息來源通道對應的 adapter（多通道並存的關鍵）
+    const adapter = adaptersByChannel.get(msg.channel);
+    if (!adapter) return;
     // 「有沒有偷懶」查詢：工作群/運維群都可問，回報目前工作時長
     if (isSlackingQuery(msg.text)) {
       const mins = Math.round((Date.now() - botStartedAt) / 60000);
@@ -110,10 +123,8 @@ async function main(): Promise<void> {
     if (await handleCommand(adapter, msg, projectStore, pendingSite, pendingLocations, contextStore)) return;
 
     // 非工作群來源（例如運維群閒聊）只回應上面的查詢/指令，不進歸檔流程
-    if (
-      config.telegramAllowedChatId &&
-      msg.chatId !== config.telegramAllowedChatId
-    ) {
+    const workChat = workChatByChannel[msg.channel] ?? '';
+    if (workChat && msg.chatId !== workChat) {
       return;
     }
 
@@ -313,10 +324,12 @@ async function main(): Promise<void> {
 
   // 相簿合併：同一 media group 的多則訊息 debounce 約 2 秒合併為一筆再處理
   const aggregator = new MediaGroupAggregator(onRecordReady, 2000);
-  adapter.onMessage((msg) => aggregator.push(msg));
 
   // 人工確認按鈕回呼（✅ 確認 / ✏️ 改工地 / 選工地）；單則失敗不影響主迴圈
-  adapter.onCallback(async (cb) => {
+  const onCallback = async (cb: IncomingCallback) => {
+    // 回呼一律走來源通道對應的 adapter（與訊息回覆同理）
+    const adapter = adaptersByChannel.get(cb.channel);
+    if (!adapter) return;
     try {
       // loc:… 為「單獨定位」流程（只設目前工地上下文，不搬檔），與 s:/c:/e: 分流
       if (isLocationCallback(cb)) {
@@ -361,7 +374,13 @@ async function main(): Promise<void> {
     } catch (err) {
       logger.error('處理按鈕回呼失敗', err instanceof Error ? err.message : err);
     }
-  });
+  };
+
+  // 把同一組 handler 註冊到每個通道的 adapter
+  for (const a of adapters) {
+    a.onMessage((msg) => aggregator.push(msg));
+    a.onCallback(onCallback);
+  }
 
   // 優雅關閉：Ctrl+C / 終止訊號時停止收訊再退出
   const shutdown = async () => {
@@ -371,7 +390,7 @@ async function main(): Promise<void> {
       `🔴 報告老闆我下班了\n時間：${nowLocal()}`,
     );
     aggregator.flushAll(); // 把尚在 debounce 等待的相簿先合併送出
-    await adapter.stop();
+    await Promise.all(adapters.map((a) => a.stop()));
     db.close();
     process.exit(0);
   };
@@ -386,7 +405,8 @@ async function main(): Promise<void> {
   notifier.startHeartbeat();
   notifier.startUptimeReports(); // 3〜5 小時隨機回報工作時長
 
-  await adapter.start();
+  // 啟動所有通道的收訊（Telegram 的 start() 會在 poll loop 阻塞，等同維持程式存活）
+  await Promise.all(adapters.map((a) => a.start()));
 }
 
 /** 是不是在問「有沒有偷懶」（訊息含「偷懶」二字即觸發） */
