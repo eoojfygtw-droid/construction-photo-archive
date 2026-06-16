@@ -130,3 +130,18 @@ V0 驗收 6/17 收尾、宣告 V0 通過後才開工 V2。
 1. **「標待修繕」的觸發 UI 未定**：建議掛在「確認回覆」上加三顆狀態按鈕，沿用既有 `OutgoingButton`（Telegram inline / LINE quick reply 皆已支援），兩通道共用。
 2. **reply-to 配對需擴 `IncomingMessage`**：目前正規化型別（`src/channels/types.ts`）未帶「回覆了哪則訊息」，D2 需加 `replyTo` 欄 + 各 adapter 正規化。LINE reply-to 受限已在第 9 節風險列。
 3. **`defect_no` per-site 流水號是新計數器**：可參考 `ProjectStore` 的 `nextAutoCode` 模式，但與 `record_no`（`{code}-{YYYYMMDD}-{NNN}`）是兩套編號，勿混用。
+
+### C. D0 開工前置決策（2026-06-16 定案，使用者全數確認）
+
+> 把第 9 節的待定填上 + 對齊 repo 現況。皆為實作層決定，未改藍圖設計與學長確認流程。
+
+| # | 決策 | 定案 | 依據 |
+|---|---|---|---|
+| 1 | **migration 機制（D0 核心）** | 引入冪等 migration：`PRAGMA table_info` 檢查欄位 → 不存在才 `ALTER TABLE ... ADD COLUMN`；`defects` 用 `CREATE TABLE IF NOT EXISTS`。重啟 bot 自動補欄、不毀既有資料 | 現 schema 全 `CREATE IF NOT EXISTS`，無 ALTER 機制 → 加欄不會進既有 `app.db` |
+| 2 | **時間欄型別** | 一律 **TEXT（ISO 字串）**，不用 datetime | repo 慣例：`records.created_at/received_at`、`status_logs.changed_at` 皆 TEXT |
+| 3 | **`defect_no` 格式** | `{code}-D{NNN}`（per-site 流水 3 位，例 `A001-D001`）；新增產生器 `nextDefectNo(code)` 仿 `nextRecordNo` | 與 `record_no` 的 `{code}-` 前綴一致、易讀 |
+| 4 | **`defect_stage` 位置 / 與既有 `photos.phase` 關係** | `defect_stage`（待修繕/修繕中/完成修繕）加在 **records**（同藍圖）；既有 `photos.phase`（before/after，schema 已存在、註解「V2 改善前後」）**先不動**，日後可由 defect_stage 推導 | 兩者語義不同，分開不打架；發現 schema 早已留 `phase` 伏筆 |
+| 5 | **巡查統計** | 先 records 推導 + `defects.last_inspected_at`/`inspection_count` 冗餘欄（寫入時更新） | 同藍圖建議 |
+| 6 | **status 值** | defects：待修繕/修繕中/完成修繕/結案；現況照(records, defect_id=null)沿用舊值 | 同藍圖第 7 節 |
+
+**仍待 D1/D2 定（今天不鎖）**：`CurrentDefectStore` TTL（傾向 mirror `UserContextStore` 2h）、reply-to 擴 `IncomingMessage`、「標待修繕」觸發 UI、現況照 vs 自動掛的判定邏輯。
