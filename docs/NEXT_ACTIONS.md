@@ -1,5 +1,6 @@
 # NEXT_ACTIONS — 工地照片歸檔系統
 
+> ✅ 2026-06-16 桌機開工：①**LINE L2+L3 完成並實機上線**——L2（downloadFile `/v2/bot/message/{id}/content`＋同人去抖合併合成 mediaGroupId＋getGroupMemberProfile 取顯示名）、L3（push 回覆＋quick reply 取代 inline 按鈕＋postback 正規化＋editMessageText 改送新訊息），互動已與 Telegram 等價；正式 bot 重啟後同 process 跑 TG（polling）+ LINE（webhook :3011），實機驗通（收照片→判不出選單→按鈕批次歸 A001→後續 recent_context 自動歸）。新增 `smoke-line.ts`（41 條）入 `npm test`、`line-test.ts` 隔離測試 runner；typecheck＋全 11 套 smoke 全綠。⚠️**LINE 入口目前靠臨時 trycloudflare 隧道（綁本對話），不持久 → 持久化＝L5**。②**V2 缺失生命週期藍圖落檔** `docs/PLAN_v2_defect.md`（學長需求→戰情室整理；含實作對齊附錄）；**D0 須等 V0 驗收 6/17 收尾、宣告通過後才開工**。③小寫代碼確認可判（`findByCode` 兩邊 `toUpperCase`）。
 > ✅ 2026-06-15 桌機開工：①查證 6/14 已 restart（正式 bot `app.db` 於 6/14 17:02/17:13/18:23 重啟），且 5-B1 已**實機生效**（6/15 11:04 真群組出現「批次歸檔判不出照片 工地=ONE33」），5-B2/「龍哥來了」同批套上；今早 ONE33 自動歸 9 筆全 recent_context、0 誤判。②**驗收續跑 3 天（6/15–6/17）邊跑邊調**，之後再宣告 V0 通過。③**bot 保留**（6/13 行事曆題結案，不動 remove-bot.cmd）。
 > ✅ 2026-06-14 桌機開工：筆電 6/13 置頂的「後台疑似沒 push」警告已結案——後台確實擱在桌機沒推，本次 `git pull --rebase` 整合筆電 6/13 commit 後一起 push，後台正式上 GitHub，警告撤除。
 
@@ -8,7 +9,9 @@
 - **後台四頁換皮**（`server/src/admin/index.ts`）：套 Claude Design 視覺（工程藍灰＋安全琥珀、Noto Sans TC + JetBrains Mono、設計 token 化 badge/卡片/kv/照片牆/lightbox、RWD＋列印）。純伺服器端 HTML＋內嵌 CSS、未引入框架、功能不動；typecheck＋全套 smoke 全綠（admin 78）。學長 demo（3300 + Cloudflare tunnel）已換新設計。設計簡報 `docs/DESIGN_BRIEF_admin.md`、改造前後圖在 `docs/admin-{before,after}/`（gitignored）。
 - **LINE 串接**：OA「工地照片歸檔」(@701kgjpe) + Messaging API 建好，憑證驗通（`scripts/preflight-line.ts`，`chatMode=bot`）。**L1**（`1222d3d`）多通道架構重構：`index.ts` 單 adapter→多 adapter 陣列（回覆/下載/回呼依來源通道路由、gating per-channel）、`env.ts` 加 LINE 設定 + `isLineConfigured()`。**L0**（`5546a1f`）`LineAdapter` webhook 收訊接通：起 server＋驗 X-Line-Signature＋message 正規化成 IncomingMessage；`scripts/line-probe.ts` 獨立驗證。**實機驗通**（LINE→Cloudflare tunnel→adapter，私訊＋群組都收到）。計畫全文見 `docs/PLAN_line_integration.md`。
 - **⚠️ 待辦/注意**：① `server/.env` 需加 `LINE_ALLOWED_GROUP_ID=C86dc0efab0918cc101db38396df10c53`（.env 由使用者維護、agent 不可寫）。② `trycloudflare` 臨時網址重開機/睡眠會變，要實機測再重跑 tunnel＋回貼 webhook URL。③ 狀態 store 的 `channel:` key 前綴暫緩（TG/LINE id 不衝突，純防禦）。④ 未重啟正式 bot（同 token 雙 poller 會互搶）。
-- **下一步 L2**（明天續做）：把 `LineAdapter` 掛進 `index.ts`；補 `downloadFile`（LINE `/v2/bot/message/{id}/content`）、同人短時間去抖合併（LINE 無相簿 id）、`getGroupMemberProfile` 取回報人名稱；讓 LINE 照片真的走歸檔。之後 L3（reply/push + Flex 按鈕 + 確認流程）、L4（對等補完）、L5（正式入口落腳 NAS/Cloudflare）。
+- ~~**下一步 L2**~~ ✅ **L2+L3 已完成並上線（2026-06-16）**：LineAdapter 掛進 `index.ts`（`isLineConfigured` 時才掛）、downloadFile、同人去抖合併、getGroupMemberProfile、push 回覆、quick reply 按鈕、postback 回呼、editMessageText 改送新訊息。互動與 Telegram 等價。
+  - **下一步 L5（持久入口）**：目前 LINE webhook 靠臨時 trycloudflare 隧道（綁桌機本對話、不持久；隧道一停 LINE 即斷，TG 不受影響）。要 24h 在線需固定對外入口——選項：你自跑常駐 `cloudflared` 具名 tunnel／反代／NAS；定 24h 主機後一次到位。`server/.env` 現用 `LINE_WEBHOOK_PORT=3011`＋`LINE_ALLOWED_GROUP_ID=C86…`。
+  - L4（對等補完）：兩通道功能已大致對齊，缺口隨 V2 缺失閉環一起補（見 PLAN_v2_defect.md D4）。
 
 **🟢 2026-06-14（午後續場）：判不出編號修正 + 報告頁 5-A5**（後台功能、**不需 restart bot**）。①`c602c4f` 補回判不出暫存編號、`/新增工地` 無定位文案講明不會自動歸；釐清「自動歸觸發條件」（見 DECISIONS）。②**5-A5 報告頁**（`npm run admin` → http://127.0.0.1:3300/report）：按工地分區＋期間下拉（今天/7/14/30天/自訂）＋代表照片縮圖＋**列印友善**；縮圖點擊頁內 lightbox 放大、帶 24px 文字註解、**有錄音的照片在放大層按鈕播放**（錄音不單列在報告頁）。typecheck + 10 支 smoke 全綠（admin 58→78）。詳見 PROGRESS_LOG / DECISIONS（2026-06-14）。
 
