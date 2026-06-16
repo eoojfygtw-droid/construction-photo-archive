@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "report": "tsx scripts/report.ts",
     "admin": "tsx src/admin/index.ts",
+    "line-tunnel": "tsx scripts/line-tunnel.ts",
     "test": "tsx scripts/smoke-archive.ts && tsx scripts/smoke-confirm.ts && tsx scripts/smoke-site.ts && tsx scripts/smoke-location.ts && tsx scripts/smoke-report.ts && tsx scripts/smoke-voice.ts && tsx scripts/smoke-append.ts && tsx scripts/smoke-inbox.ts && tsx scripts/smoke-command.ts && tsx scripts/smoke-admin.ts && tsx scripts/smoke-line.ts"
   },
   "dependencies": {
