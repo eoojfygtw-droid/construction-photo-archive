@@ -4,9 +4,10 @@
 //        指令處理 / 照片下載+EXIF / 工地判斷 / 寫入 DB → 啟動收訊。
 // 目前到「寫入 SQLite（5-1）」；尚未做正式搬檔歸檔（5-2）、按鈕詢問（5-3）。
 // ============================================================
-import { loadConfig } from './config/env';
+import { loadConfig, isLineConfigured } from './config/env';
 import { logger } from './utils/logger';
 import { TelegramAdapter } from './channels/telegram/TelegramAdapter';
+import { LineAdapter } from './channels/line/LineAdapter';
 import type { MessageChannelAdapter } from './channels/MessageChannelAdapter';
 import type { ChannelName, IncomingCallback, IncomingMessage } from './channels/types';
 import { intakePhotos, type IntakeResult } from './core/media/photoIntake';
@@ -86,9 +87,17 @@ async function main(): Promise<void> {
   const pendingInbox = new PendingInboxStore(); // 冷啟動：累積判不出照片、批次歸檔
 
   // 多通道：核心對每個 adapter 註冊同一組 handler；回覆／下載檔案時用「訊息來源通道」
-  // 對應的 adapter。目前掛 Telegram；LINE 於 L2 接上 LineAdapter 後 push 進這個陣列即可，
-  // 以下核心邏輯不動。
+  // 對應的 adapter。Telegram 永遠掛；LINE 僅在憑證設妥（isLineConfigured）時才掛上，
+  // 未設定的環境（含目前正式 bot）完全不受影響。以下核心邏輯不動。
   const adapters: MessageChannelAdapter[] = [new TelegramAdapter(config)];
+  if (isLineConfigured(config)) {
+    adapters.push(new LineAdapter(config));
+    logger.info('LINE 通道已啟用（webhook 收訊）', {
+      埠: config.lineWebhookPort,
+      路徑: config.lineWebhookPath,
+      工作群: config.lineAllowedGroupId || '（未綁定，全部來源都會歸檔！請盡快設 LINE_ALLOWED_GROUP_ID）',
+    });
+  }
   const adaptersByChannel = new Map<ChannelName, MessageChannelAdapter>(
     adapters.map((a) => [a.channel, a]),
   );
